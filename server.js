@@ -26,6 +26,7 @@ const app = express();
 const allowedOrigins = [
   // Main site
   "https://www.twayba.com",
+  "https://twayba.com",
   "https://twayba-admin.vercel.app",
   "http://localhost:5173",
   "http://localhost:5174",
@@ -61,7 +62,7 @@ app.use("/api/payments", paymentRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api", reviewRoutes);
-app.use("/admin", adminroutes);
+app.use("/api/admin", adminroutes);
 app.use("/api/category-clicks", categoryClickRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/wishlist", wishlistRoutes);
@@ -69,12 +70,12 @@ app.use("/api/contact", contactRoutes);
 // ...
 
 app.use("/api/ipban", ipBanRoutes);
-app.use("/admin/auth", adminAuthRoutes);
+app.use("/api/admin/auth", adminAuthRoutes);
 // Example protected admin API
-app.get("/admin/stats", requireAdmin, (req, res) => {
+app.get("/api/admin/stats", requireAdmin, (req, res) => {
   res.json({ ok: true, message: `Hello Admin ${req.admin.email}` });
 });
-app.use("/api/analytics", analyticsRoutes);
+// app.use("/api/analytics", analyticsRoutes); // Duplicate removed
 
 // --------- SOCKET.IO (with CORS) ----------
 const PORT = process.env.PORT || 5000;
@@ -84,6 +85,7 @@ const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ["GET", "POST"],
+    credentials: true
   },
 });
 
