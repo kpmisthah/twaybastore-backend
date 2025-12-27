@@ -28,6 +28,7 @@ const allowedOrigins = [
   "https://www.twayba.com",
   "https://twayba.com",
   "https://twayba-admin.vercel.app",
+  "https://twaybastore-admin.vercel.app",
   "http://localhost:5173",
   "http://localhost:5174",
 ];
@@ -37,9 +38,10 @@ app.use(
     origin: function (origin, callback) {
       // Allow requests with no origin (like Postman, curl)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) {
+      if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
         return callback(null, true);
       } else {
+        console.error("UNKNOWN ORIGIN BLOCKED BY CORS:", origin);
         return callback(new Error("Not allowed by CORS"));
       }
     },
