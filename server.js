@@ -21,6 +21,7 @@ import stripeWebhookRoutes from "./routes/stripeWebhookRoutes.js";
 import { requireAdmin } from "./middleware/adminAuth.js";
 import ipBanRoutes from "./routes/ipBanRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
+import bannerRoutes from "./routes/bannerRoutes.js";
 dotenv.config();
 
 // ✅ Validate environment variables before starting server
@@ -78,6 +79,7 @@ app.use("/api/category-clicks", categoryClickRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/contact", contactRoutes);
+app.use("/api/banners", bannerRoutes);
 // ...
 
 app.use("/api/ipban", ipBanRoutes);
