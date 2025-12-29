@@ -168,30 +168,116 @@ router.post("/", async (req, res) => {
 });
 
 /* ---------------------------------------------
-   6) GET ALL PRODUCTS
+   6) GET ALL PRODUCTS (WITH PAGINATION & FILTERS)
 ---------------------------------------------- */
 router.get("/", async (req, res) => {
   try {
-    const { q } = req.query;
+    const {
+      q,              // Search query
+      category,       // Filter by category
+      minPrice,       // Filter by min price
+      maxPrice,       // Filter by max price
+      inStock,        // Filter by stock availability (true/false)
+      discount,       // Filter by discount (true/false)
+      sort = 'newest', // Sort: newest, price-asc, price-desc, popular, name
+      page = 1,       // Page number
+      limit = 12      // Items per page
+    } = req.query;
 
-    let filter = {};
+    // Build filter object
+    let filter = { isDeleted: { $ne: true } };
 
+    // Search by name
     if (q) {
       const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
-      // word-boundary regex → ladder ≠ bladder
       filter.name = new RegExp(`\\b${escaped}\\b`, "i");
     }
 
-    // Filter out deleted products
-    filter.isDeleted = { $ne: true };
+    // Filter by category
+    if (category) {
+      if (category.toLowerCase() === 'discount') {
+        filter.isDiscounted = true;
+      } else {
+        filter.category = category;
+      }
+    }
 
-    const products = await Product.find(filter).sort({ createdAt: -1 });
+    // Filter by price range
+    if (minPrice || maxPrice) {
+      filter.price = {};
+      if (minPrice) filter.price.$gte = Number(minPrice);
+      if (maxPrice) filter.price.$lte = Number(maxPrice);
+    }
 
-    res.json(products);
+    // Filter by stock availability
+    if (inStock === 'true') {
+      filter.stock = { $gt: 0 };
+    }
+
+    // Filter by discount
+    if (discount === 'true') {
+      filter.discount = { $gt: 0 };
+    }
+
+    // Build sort option
+    let sortOption = { createdAt: -1 }; // Default: newest first
+    switch (sort) {
+      case 'price-asc':
+        sortOption = { price: 1 };
+        break;
+      case 'price-desc':
+        sortOption = { price: -1 };
+        break;
+      case 'popular':
+        sortOption = { clickCount: -1 };
+        break;
+      case 'name':
+        sortOption = { name: 1 };
+        break;
+      case 'oldest':
+        sortOption = { createdAt: 1 };
+        break;
+      default:
+        sortOption = { createdAt: -1 };
+    }
+
+    // Pagination
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 12));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Execute query with pagination
+    const [products, total] = await Promise.all([
+      Product.find(filter)
+        .sort(sortOption)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Product.countDocuments(filter)
+    ]);
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(total / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
+
+    res.json({
+      products,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNextPage,
+        hasPrevPage
+      }
+    });
   } catch (err) {
-    console.error("Search failed:", err);
-    res.status(500).json({ message: "Search failed" });
+    console.error("Product fetch failed:", err);
+    res.status(500).json({
+      message: "Failed to fetch products",
+      error: process.env.NODE_ENV !== "production" ? err.message : undefined
+    });
   }
 });
 

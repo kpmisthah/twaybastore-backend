@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { validateEnvironment } from "./utils/validateEnv.js";
 import authRoutes from "./routes/authRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
@@ -16,10 +17,14 @@ import analyticsRoutes from "./routes/analyticsRoutes.js";
 import wishlistRoutes from "./routes/wishlistRoutes.js";
 import contactRoutes from "./routes/contactRoutes.js";
 import adminAuthRoutes from "./routes/adminAuthRoutes.js";
+import stripeWebhookRoutes from "./routes/stripeWebhookRoutes.js";
 import { requireAdmin } from "./middleware/adminAuth.js";
 import ipBanRoutes from "./routes/ipBanRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 dotenv.config();
+
+// ✅ Validate environment variables before starting server
+validateEnvironment();
 
 const app = express();
 
@@ -48,6 +53,10 @@ app.use(
     credentials: true, // Set to true if you use cookies/session
   })
 );
+
+// ⚠️ IMPORTANT: Stripe webhook MUST be before express.json()
+// Stripe needs raw body for signature verification
+app.use("/api/stripe", stripeWebhookRoutes);
 
 app.use(express.json());
 

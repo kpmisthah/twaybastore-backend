@@ -110,13 +110,135 @@ router.post("/send-broadcast", async (req, res) => {
   }
 });
 
-// GET /admin/orders - get all orders for admin with payment info
+// GET /admin/orders - get all orders for admin with pagination, search, and filters
 router.get("/orders", async (req, res) => {
   try {
-    const orders = await Order.find().populate("user"); // you can add .sort({createdAt:-1}) if you want latest first
-    res.json(orders);
+    const {
+      q,              // Search by order ID, customer name, email, phone
+      status,         // Filter by status
+      paymentMethod,  // Filter by payment method (CARD, COD)
+      isPaid,         // Filter by payment status (true/false)
+      startDate,      // Filter by date range start
+      endDate,        // Filter by date range end
+      sort = 'newest', // Sort: newest, oldest, amount-asc, amount-desc
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    // Build filter
+    let filter = {};
+
+    // Filter by status
+    if (status) {
+      filter.status = status;
+    }
+
+    // Filter by payment method
+    if (paymentMethod) {
+      filter.paymentMethod = paymentMethod;
+    }
+
+    // Filter by payment status
+    if (isPaid !== undefined) {
+      filter.isPaid = isPaid === 'true';
+    }
+
+    // Filter by date range
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) {
+        filter.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        // Set to end of day
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
+    // Build sort option
+    let sortOption = { createdAt: -1 }; // Default: newest first
+    switch (sort) {
+      case 'oldest':
+        sortOption = { createdAt: 1 };
+        break;
+      case 'amount-asc':
+        sortOption = { total: 1 };
+        break;
+      case 'amount-desc':
+        sortOption = { total: -1 };
+        break;
+      default:
+        sortOption = { createdAt: -1 };
+    }
+
+    // Pagination
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 20));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Execute query
+    const [orders, total] = await Promise.all([
+      Order.find(filter)
+        .populate("user")
+        .sort(sortOption)
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Order.countDocuments(filter)
+    ]);
+
+    // Search in results if query provided (for order ID, name, email, phone)
+    let results = orders;
+    if (q) {
+      const searchLower = q.toLowerCase();
+      results = orders.filter(order => {
+        // Search in order ID
+        if (order._id.toString().toLowerCase().includes(searchLower)) return true;
+
+        // Search in shipping info
+        if (order.shipping?.name?.toLowerCase().includes(searchLower)) return true;
+        if (order.shipping?.email?.toLowerCase().includes(searchLower)) return true;
+        if (order.shipping?.phone?.toLowerCase().includes(searchLower)) return true;
+
+        // Search in contact info
+        if (order.contact?.name?.toLowerCase().includes(searchLower)) return true;
+        if (order.contact?.email?.toLowerCase().includes(searchLower)) return true;
+        if (order.contact?.phone?.toLowerCase().includes(searchLower)) return true;
+
+        // Search in user info
+        if (order.user?.fullName?.toLowerCase().includes(searchLower)) return true;
+        if (order.user?.email?.toLowerCase().includes(searchLower)) return true;
+        if (order.user?.mobile?.toLowerCase().includes(searchLower)) return true;
+
+        return false;
+      });
+    }
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(total / limitNum);
+    const hasNextPage = pageNum < totalPages;
+    const hasPrevPage = pageNum > 1;
+
+    res.json({
+      orders: results,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNextPage,
+        hasPrevPage,
+        showing: results.length
+      }
+    });
   } catch (err) {
-    res.status(500).json({ message: "Failed to fetch orders." });
+    console.error("Admin fetch orders error:", err);
+    res.status(500).json({
+      message: "Failed to fetch orders",
+      error: process.env.NODE_ENV !== "production" ? err.message : undefined
+    });
   }
 });
 

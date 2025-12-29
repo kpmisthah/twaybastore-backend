@@ -1,5 +1,6 @@
 import express from "express";
 import crypto from "crypto";
+import stripe from "../config/stripe.js";
 
 import { sendTelegramMessage } from "../utils/telegram.js";
 import Order from "../models/Order.js";
@@ -12,6 +13,7 @@ import {
   sendOtpEmail,
   sendNewOrderAlert,
 } from "../utils/mailer.js";
+import { orderRateLimiter } from "../middleware/rateLimiter.js";
 
 const router = express.Router();
 
@@ -25,24 +27,79 @@ const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const cancelOtps = {}; // { [orderId]: { otpHash, expiresAt, lastSentAt? } }
 
 /* -------------------------------------------------------
-   User: Get my orders
+   User: Get my orders (with pagination and filters)
 ------------------------------------------------------- */
 router.get("/my-orders/:userId", async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.params.userId }).sort({
-      createdAt: -1,
+    const {
+      status,         // Filter by status
+      startDate,      // Filter by date range
+      endDate,
+      page = 1,
+      limit = 10
+    } = req.query;
+
+    // Build filter
+    let filter = { user: req.params.userId };
+
+    // Filter by status
+    if (status) {
+      filter.status = status;
+    }
+
+    // Filter by date range
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = end;
+      }
+    }
+
+    // Pagination
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit) || 10));
+    const skip = (pageNum - 1) * limitNum;
+
+    // Execute query
+    const [orders, total] = await Promise.all([
+      Order.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limitNum)
+        .lean(),
+      Order.countDocuments(filter)
+    ]);
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(total / limitNum);
+
+    res.json({
+      orders,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages,
+        hasNextPage: pageNum < totalPages,
+        hasPrevPage: pageNum > 1
+      }
     });
-    res.json(orders);
   } catch (err) {
     console.error("Fetch my orders error:", err);
-    res.status(500).json({ message: "Failed to fetch user orders." });
+    res.status(500).json({
+      message: "Failed to fetch user orders.",
+      error: process.env.NODE_ENV !== "production" ? err.message : undefined
+    });
   }
 });
 
 
-  //  Place new order (on payment success or COD)
+//  Place new order (on payment success or COD)
 
-router.post("/", async (req, res) => {
+router.post("/", orderRateLimiter, async (req, res) => {
   try {
     const {
       userId,
@@ -108,6 +165,58 @@ router.post("/", async (req, res) => {
     // 1️⃣ Normalize COD vs Stripe payment info
     const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
 
+    // 🔒 SECURITY: Verify Stripe Payment if not COD
+    if (!isCOD && paymentIntentId) {
+      try {
+        // Check if this payment intent was already used
+        const existingOrder = await Order.findOne({ paymentIntentId });
+        if (existingOrder) {
+          return res.status(400).json({
+            message: "This payment has already been used for another order",
+            orderId: existingOrder._id
+          });
+        }
+
+        // Retrieve and verify payment intent from Stripe
+        const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+        if (intent.status !== "succeeded") {
+          return res.status(400).json({
+            message: `Payment validation failed. Status: ${intent.status}`,
+            details: "Please complete the payment before placing order"
+          });
+        }
+
+        // Verify Amount (Prevent using cheap payment for expensive order)
+        const paidAmount = intent.amount; // in cents
+        const orderAmount = Math.round(finalTotal * 100); // in cents
+
+        // Allow only 2 cents variance (stricter than before)
+        if (Math.abs(paidAmount - orderAmount) > 2) {
+          console.error(`Payment amount mismatch: Paid ${paidAmount}, Expected ${orderAmount}`);
+          return res.status(400).json({
+            message: `Payment amount mismatch. Paid: €${(paidAmount / 100).toFixed(2)}, Expected: €${finalTotal.toFixed(2)}`,
+            details: "Please contact support if you believe this is an error"
+          });
+        }
+
+        // Verify the payment was made by the correct user (if userId in metadata)
+        if (userId && intent.metadata?.userId && intent.metadata.userId !== userId) {
+          return res.status(400).json({
+            message: "Payment user mismatch",
+            details: "This payment was made by a different user"
+          });
+        }
+
+      } catch (err) {
+        console.error("Payment verification failed:", err.message);
+        return res.status(400).json({
+          message: "Invalid or expired payment intent",
+          details: process.env.NODE_ENV !== "production" ? err.message : undefined
+        });
+      }
+    }
+
     // 2️⃣ Enrich product variants
     const fixedItems = await Promise.all(
       items.map(async (item) => {
@@ -159,14 +268,14 @@ router.post("/", async (req, res) => {
 
     await order.save();
     // 🚨 Telegram instant notification
-    
+
     await sendTelegramMessage(
       `🛒 <b>New Order</b>\n` +
-        `Order ID: ${order._id}\n` +
-        `Amount: €${order.finalTotal}\n` +
-        `Payment: ${order.paymentMethod}\n` +
-        `Customer: ${mergedShipping.name}\n` +
-        `Time: ${new Date().toLocaleString()}`
+      `Order ID: ${order._id}\n` +
+      `Amount: €${order.finalTotal}\n` +
+      `Payment: ${order.paymentMethod}\n` +
+      `Customer: ${mergedShipping.name}\n` +
+      `Time: ${new Date().toLocaleString()}`
     );
 
     // ✅ Mark coupon as used
@@ -411,7 +520,7 @@ router.post("/:orderId/cancel", async (req, res) => {
 /* -------------------------------------------------------
    Guest checkout (still supports coupon)
 ------------------------------------------------------- */
-router.post("/guest", async (req, res) => {
+router.post("/guest", orderRateLimiter, async (req, res) => {
   try {
     const { items, total, paymentIntentId, guestInfo, couponCode } = req.body;
 
@@ -429,6 +538,49 @@ router.post("/guest", async (req, res) => {
     if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
       discountAmount = Number((finalTotal * 0.05).toFixed(2));
       finalTotal = Number((finalTotal - discountAmount).toFixed(2));
+    }
+
+    const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
+
+    // 🔒 SECURITY: Verify Stripe (Guest)
+    if (!isCOD && paymentIntentId) {
+      try {
+        // Check if this payment intent was already used
+        const existingOrder = await Order.findOne({ paymentIntentId });
+        if (existingOrder) {
+          return res.status(400).json({
+            message: "This payment has already been used for another order",
+            orderId: existingOrder._id
+          });
+        }
+
+        // Retrieve and verify payment intent from Stripe
+        const intent = await stripe.paymentIntents.retrieve(paymentIntentId);
+        if (intent.status !== "succeeded") {
+          return res.status(400).json({
+            message: `Payment validation failed. Status: ${intent.status}`,
+            details: "Please complete the payment before placing order"
+          });
+        }
+
+        // Verify Amount (Guest)
+        const paidAmount = intent.amount;
+        const orderAmount = Math.round(finalTotal * 100);
+        if (Math.abs(paidAmount - orderAmount) > 2) {
+          console.error(`Guest payment amount mismatch: Paid ${paidAmount}, Expected ${orderAmount}`);
+          return res.status(400).json({
+            message: `Payment amount mismatch. Paid: €${(paidAmount / 100).toFixed(2)}, Expected: €${finalTotal.toFixed(2)}`,
+            details: "Please contact support if you believe this is an error"
+          });
+        }
+
+      } catch (err) {
+        console.error("Guest payment verification failed:", err.message);
+        return res.status(400).json({
+          message: "Invalid or expired payment intent",
+          details: process.env.NODE_ENV !== "production" ? err.message : undefined
+        });
+      }
     }
 
     const shipping = {
@@ -476,9 +628,10 @@ router.post("/guest", async (req, res) => {
       finalTotal,
       discountAmount,
       couponCode: couponCode || null,
-      isPaid: !!paymentIntentId,
+      paymentMethod: isCOD ? "COD" : "CARD",
+      isPaid: !isCOD && !!paymentIntentId,
       paymentIntentId: paymentIntentId || undefined,
-      paidAt: paymentIntentId ? new Date() : undefined,
+      paidAt: !isCOD && paymentIntentId ? new Date() : undefined,
       shipping,
       contact,
     });
