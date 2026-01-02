@@ -190,7 +190,12 @@ router.get("/", async (req, res) => {
     // Search by name
     if (q) {
       const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      filter.name = new RegExp(`\\b${escaped}\\b`, "i");
+      const regex = new RegExp(escaped, "i");
+      filter.$or = [
+        { name: regex },
+        { description: regex },
+        { category: regex }
+      ];
     }
 
     // Filter by category
