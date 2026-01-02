@@ -243,7 +243,7 @@ router.get("/", async (req, res) => {
 
     // Pagination
     const pageNum = Math.max(1, parseInt(page) || 1);
-    const limitNum = Math.min(100, Math.max(1, parseInt(limit) || 12));
+    const limitNum = Math.min(1200, Math.max(1, parseInt(limit) || 12));
     const skip = (pageNum - 1) * limitNum;
 
     // Execute query with pagination
