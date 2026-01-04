@@ -18,6 +18,7 @@ const bannerSchema = new mongoose.Schema(
         link: {
             type: String,
             default: "/products",
+            trim: true,
         },
         isActive: {
             type: Boolean,
