@@ -179,6 +179,7 @@ router.get("/", async (req, res) => {
       maxPrice,       // Filter by max price
       inStock,        // Filter by stock availability (true/false)
       discount,       // Filter by discount (true/false)
+      weeklyDeal,     // Filter by weeklyDeal (true/false)
       sort = 'newest', // Sort: newest, price-asc, price-desc, popular, name
       page = 1,       // Page number
       limit = 12      // Items per page
@@ -222,6 +223,11 @@ router.get("/", async (req, res) => {
     // Filter by discount
     if (discount === 'true') {
       filter.discount = { $gt: 0 };
+    }
+
+    // Filter by weeklyDeal
+    if (weeklyDeal === 'true') {
+      filter.weeklyDeal = true;
     }
 
     // Build sort option
