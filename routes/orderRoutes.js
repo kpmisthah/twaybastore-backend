@@ -238,7 +238,8 @@ router.post("/", orderRateLimiter, async (req, res) => {
               (!item.color ||
                 (v.color &&
                   v.color.toLowerCase() === item.color.toLowerCase())) &&
-              (!item.dimensions || v.dimensions === item.dimensions)
+              (!item.dimensions ||
+                v.dimensions?.trim() === item.dimensions?.trim())
           );
         }
 
@@ -293,7 +294,7 @@ router.post("/", orderRateLimiter, async (req, res) => {
         const variant = product.variants.find(
           (v) =>
             v.color?.toLowerCase() === item.color?.toLowerCase() &&
-            v.dimensions === item.dimensions
+            v.dimensions?.trim() === item.dimensions?.trim()
         );
         if (variant)
           variant.stock = Math.max(0, (variant.stock || 0) - item.qty);
@@ -611,7 +612,8 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
           (v) =>
             (!item.color ||
               v.color?.toLowerCase() === item.color?.toLowerCase()) &&
-            (!item.dimensions || v.dimensions === item.dimensions)
+            (!item.dimensions ||
+              v.dimensions?.trim() === item.dimensions?.trim())
         );
         return {
           ...item,
@@ -644,7 +646,7 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
       const variant = product.variants?.find(
         (v) =>
           v.color?.toLowerCase() === item.color?.toLowerCase() &&
-          v.dimensions === item.dimensions
+          v.dimensions?.trim() === item.dimensions?.trim()
       );
       if (variant) {
         variant.stock = Math.max(0, (variant.stock || 0) - item.qty);
