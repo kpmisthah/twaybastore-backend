@@ -109,9 +109,15 @@ router.post("/check-cart", async (req, res) => {
         const product = products.find((p) => p._id.toString() === cartItem._id);
         if (!product) return null;
 
-        const variant = product.variants?.find(
-          (v) => v.color?.toLowerCase() === cartItem.color?.toLowerCase()
-        );
+        const variant = product.variants?.find((v) => {
+          const colorMatch =
+            !cartItem.color ||
+            v.color?.toLowerCase() === cartItem.color?.toLowerCase();
+          const dimMatch =
+            !cartItem.dimensions ||
+            v.dimensions?.trim() === cartItem.dimensions?.trim();
+          return colorMatch && dimMatch;
+        });
 
         return {
           _id: product._id,
