@@ -42,7 +42,7 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
         const variant = product.variants.find(
           (v) =>
             v.color?.toLowerCase() === item.color?.toLowerCase() &&
-            v.dimensions === item.dimensions
+            v.dimensions?.trim() === item.dimensions?.trim()
         );
         if (variant && variant.price) {
           price = variant.price;
