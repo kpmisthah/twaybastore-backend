@@ -194,15 +194,11 @@ router.get("/", async (req, res) => {
     // Build filter object
     let filter = { isDeleted: { $ne: true } };
 
-    // Search by name
+    // Search by name only
     if (q) {
-      const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escaped = q.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&");
       const regex = new RegExp(escaped, "i");
-      filter.$or = [
-        { name: regex },
-        { description: regex },
-        { category: regex }
-      ];
+      filter.name = regex;
     }
 
     // Filter by category
