@@ -13,7 +13,9 @@ import {
   sendOtpEmail,
   sendNewOrderAlert,
 } from "../utils/mailer.js";
-import { orderRateLimiter } from "../middleware/rateLimiter.js";
+import { orderRateLimiter, codRateLimiter } from "../middleware/rateLimiter.js";
+import auth from "../middleware/auth.js";
+import { requireAdmin } from "../middleware/adminAuth.js";
 
 const router = express.Router();
 
@@ -29,7 +31,7 @@ const cancelOtps = {}; // { [orderId]: { otpHash, expiresAt, lastSentAt? } }
 /* -------------------------------------------------------
    User: Get my orders (with pagination and filters)
 ------------------------------------------------------- */
-router.get("/my-orders/:userId", async (req, res) => {
+router.get("/my-orders/:userId", auth, async (req, res) => {
   try {
     const {
       status,         // Filter by status
@@ -99,7 +101,7 @@ router.get("/my-orders/:userId", async (req, res) => {
 
 //  Place new order (on payment success or COD)
 
-router.post("/", orderRateLimiter, async (req, res) => {
+router.post("/", orderRateLimiter, auth, async (req, res) => {
   try {
     const {
       userId,
@@ -110,6 +112,11 @@ router.post("/", orderRateLimiter, async (req, res) => {
       contact,
       couponCode,
     } = req.body;
+
+    // 🔒 SECURITY: Verify the userId matches the authenticated user
+    if (userId && userId !== req.userId.toString()) {
+      return res.status(403).json({ message: "User ID mismatch. Cannot place orders for other users." });
+    }
 
     const user = await User.findById(userId);
     const pick = (a, b, def = "") => (a ?? b ?? def).toString().trim();
@@ -165,6 +172,35 @@ router.post("/", orderRateLimiter, async (req, res) => {
     // 1️⃣ Normalize COD vs Stripe payment info
     const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
 
+    // 🔒 SECURITY: For COD orders, recalculate total from DB prices (NEVER trust client)
+    if (isCOD) {
+      let serverTotal = 0;
+      for (const item of items) {
+        const product = await Product.findById(item.product);
+        if (!product) {
+          return res.status(400).json({ message: `Product not found: ${item.product}` });
+        }
+        let price = product.price;
+        if (item.color && item.dimensions && product.variants?.length) {
+          const variant = product.variants.find(v =>
+            v.color?.toLowerCase() === item.color?.toLowerCase() &&
+            v.dimensions?.trim() === item.dimensions?.trim()
+          );
+          if (variant?.price) price = variant.price;
+        }
+        serverTotal += price * item.qty;
+      }
+      const expectedTotal = Number((serverTotal - discountAmount).toFixed(2));
+      if (Math.abs(expectedTotal - Number(total)) > 1) {
+        console.error(`COD price mismatch: Client sent ${total}, Server calculated ${expectedTotal}`);
+        return res.status(400).json({
+          message: "Price mismatch detected",
+          details: "The order total doesn't match current prices. Please refresh and try again."
+        });
+      }
+      finalTotal = expectedTotal;
+    }
+
     // 🔒 SECURITY: Verify Stripe Payment if not COD
     if (!isCOD && paymentIntentId) {
       try {
@@ -214,6 +250,25 @@ router.post("/", orderRateLimiter, async (req, res) => {
           message: "Invalid or expired payment intent",
           details: process.env.NODE_ENV !== "production" ? err.message : undefined
         });
+      }
+    }
+
+    // 🔒 SECURITY: Validate stock availability BEFORE creating order
+    for (const item of items) {
+      const product = await Product.findById(item.product);
+      if (!product) {
+        return res.status(400).json({ message: `Product not found: ${item.product}` });
+      }
+      if (item.color && item.dimensions && product.variants?.length) {
+        const variant = product.variants.find(v =>
+          v.color?.toLowerCase() === item.color?.toLowerCase() &&
+          v.dimensions?.trim() === item.dimensions?.trim()
+        );
+        if (variant && variant.stock !== undefined && variant.stock < item.qty) {
+          return res.status(400).json({
+            message: `Insufficient stock for ${product.name} (${item.color}, ${item.dimensions}). Available: ${variant.stock}`
+          });
+        }
       }
     }
 
@@ -369,7 +424,7 @@ router.get("/", async (_req, res) => {
 /* -------------------------------------------------------
    Admin: Get all orders (with user)
 ------------------------------------------------------- */
-router.get("/admin/orders", async (_req, res) => {
+router.get("/admin/orders", requireAdmin, async (_req, res) => {
   try {
     const orders = await Order.find().populate("user");
     res.json(orders);
@@ -382,7 +437,7 @@ router.get("/admin/orders", async (_req, res) => {
 /* -------------------------------------------------------
    Admin: Update order status (after 2 hours)
 ------------------------------------------------------- */
-router.put("/:orderId/status", async (req, res) => {
+router.put("/:orderId/status", requireAdmin, async (req, res) => {
   try {
     const { status } = req.body;
     const allowed = [
@@ -532,6 +587,20 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
       !guestInfo.address
     ) {
       return res.status(400).json({ message: "Missing guest information" });
+    }
+
+    // 🔒 SECURITY: Block COD for guest checkout
+    const guestIsCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
+    if (guestIsCOD) {
+      return res.status(400).json({
+        message: "Cash on Delivery is not available for guest checkout. Please pay with card."
+      });
+    }
+
+    // 🔒 SECURITY: Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(guestInfo.email)) {
+      return res.status(400).json({ message: "Invalid email address" });
     }
 
     let discountAmount = 0;
