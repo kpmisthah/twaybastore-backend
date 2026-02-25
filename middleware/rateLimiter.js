@@ -35,6 +35,21 @@ export const orderRateLimiter = rateLimit({
 });
 
 /**
+ * Stricter rate limiter specifically for COD orders
+ * COD has no payment verification so needs tighter limits
+ */
+export const codRateLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000, // 1 hour
+    max: 2, // Only 2 COD orders per IP per hour
+    message: {
+        error: "Too many COD orders from this IP",
+        details: "Please try again later or use card payment",
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
+
+/**
  * General API rate limiter
  */
 export const generalRateLimiter = rateLimit({
