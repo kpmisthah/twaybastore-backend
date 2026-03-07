@@ -1,7 +1,9 @@
+// MUST be first — loads .env.development (localhost) or .env (production)
+// before any module like config/stripe.js reads process.env
+import "./config/env.js";
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
-import dotenv from "dotenv";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { validateEnvironment } from "./utils/validateEnv.js";
@@ -22,7 +24,6 @@ import { requireAdmin } from "./middleware/adminAuth.js";
 import ipBanRoutes from "./routes/ipBanRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import bannerRoutes from "./routes/bannerRoutes.js";
-dotenv.config();
 
 // ✅ Validate environment variables before starting server
 validateEnvironment();

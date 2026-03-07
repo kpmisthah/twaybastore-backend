@@ -1,9 +1,7 @@
 import jwt from "jsonwebtoken";
-import dotenv from "dotenv";
 import User from "../models/User.js";
 import BannedIP from "../models/BannedIP.js";
-
-dotenv.config();
+// dotenv is loaded by server.js with the correct env file (.env.development or .env)
 
 function getClientIP(req) {
   return (

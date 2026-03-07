@@ -2,6 +2,8 @@
 import express from "express";
 import stripe from "../config/stripe.js";
 import Order from "../models/Order.js";
+import Product from "../models/Product.js";
+import User from "../models/User.js";
 import { sendOrderMail, sendNewOrderAlert } from "../utils/mailer.js";
 import { sendTelegramMessage } from "../utils/telegram.js";
 
@@ -76,14 +78,119 @@ async function handlePaymentSuccess(paymentIntent) {
     console.log("✅ Payment succeeded:", paymentIntent.id);
 
     try {
-        // Find order by payment intent ID
-        const order = await Order.findOne({
+        let order = await Order.findOne({
             paymentIntentId: paymentIntent.id,
         }).populate("user");
 
         if (!order) {
-            console.warn(`⚠️  No order found for payment intent: ${paymentIntent.id}`);
-            return;
+            console.warn(`⚠️  No order found for payment intent: ${paymentIntent.id}. Attempting recovery from metadata...`);
+
+            const { metadata } = paymentIntent;
+            if (!metadata || !metadata.items) {
+                console.error("❌ Recovery failed: No items found in metadata.");
+                return;
+            }
+
+            try {
+                const userId = metadata.userId !== 'guest' ? metadata.userId : null;
+                const itemsParsed = JSON.parse(metadata.items); // [{p, q, c, d}]
+
+                // Fetch full product details for the order
+                const items = await Promise.all(itemsParsed.map(async (it) => {
+                    const product = await Product.findById(it.p);
+                    return {
+                        product: it.p,
+                        qty: it.q,
+                        color: it.c,
+                        dimensions: it.d,
+                        name: product?.name || "Product",
+                        price: product?.price || 0,
+                        image: product?.images?.[0] || ""
+                    };
+                }));
+
+                let shipping, contact;
+                if (metadata.guestInfo) {
+                    const guestInfo = JSON.parse(metadata.guestInfo);
+                    shipping = {
+                        name: guestInfo.name,
+                        email: guestInfo.email,
+                        phone: guestInfo.phone,
+                        address: guestInfo.street,
+                        city: guestInfo.city,
+                        state: guestInfo.area,
+                        zip: guestInfo.zipCode,
+                        country: guestInfo.country || "MT"
+                    };
+                    contact = {
+                        name: guestInfo.name,
+                        email: guestInfo.email,
+                        phone: guestInfo.phone
+                    };
+                } else if (metadata.shipping && metadata.contact) {
+                    shipping = JSON.parse(metadata.shipping);
+                    contact = JSON.parse(metadata.contact);
+                } else if (userId) {
+                    // Fallback for registered users if shipping wasn't in metadata
+                    const user = await User.findById(userId);
+                    shipping = {
+                        name: user.fullName,
+                        email: user.email,
+                        phone: user.mobile,
+                        address: user.street,
+                        city: user.city,
+                        state: user.area,
+                        zip: user.zipCode,
+                        country: "MT"
+                    };
+                    contact = {
+                        name: user.fullName,
+                        email: user.email,
+                        phone: user.mobile
+                    };
+                }
+
+                const total = Number(metadata.subtotal) - Number(metadata.discount);
+
+                order = new Order({
+                    user: userId,
+                    items,
+                    total: total,
+                    finalTotal: total,
+                    discountAmount: Number(metadata.discount),
+                    couponCode: metadata.couponCode !== 'none' ? metadata.couponCode : null,
+                    paymentMethod: "CARD",
+                    isPaid: true,
+                    paidAt: new Date(),
+                    paymentIntentId: paymentIntent.id,
+                    paymentStatus: "succeeded",
+                    shipping,
+                    contact,
+                });
+
+                await order.save();
+                console.log(`✅ Recovered missing order: ${order._id}`);
+
+                // Decrement stock for recovered order
+                for (const item of items) {
+                    const product = await Product.findById(item.product);
+                    if (!product) continue;
+                    const variant = product.variants?.find(
+                        (v) =>
+                            v.color?.toLowerCase() === item.color?.toLowerCase() &&
+                            v.dimensions?.trim() === item.dimensions?.trim()
+                    );
+                    if (variant) {
+                        variant.stock = Math.max(0, (variant.stock || 0) - item.qty);
+                        await product.save();
+                    }
+                }
+
+                // Continue to notifications below
+            } catch (recoveryErr) {
+                console.error("❌ Order recovery failed:", recoveryErr);
+                return;
+            }
         }
 
         // Update order if not already marked as paid

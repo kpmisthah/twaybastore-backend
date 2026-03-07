@@ -10,7 +10,11 @@ const router = express.Router();
 // 1. Create PaymentIntent (SECURE with Idempotency)
 router.post("/create-payment", paymentRateLimiter, async (req, res) => {
   try {
-    const { items, currency = "eur", couponCode, userId, guestInfo } = req.body;
+    // 🔍 DEBUG: print which Stripe key is in use (remove after fixing)
+    const keyInUse = process.env.STRIPE_SECRET_KEY;
+    console.log("🔑 STRIPE KEY IN USE:", keyInUse?.slice(0, 20), "...");
+
+    const { items, currency = "eur", couponCode, userId, shipping, contact, guestInfo } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "No items provided" });
@@ -18,7 +22,7 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
 
     // 1. Calculate Subtotal from Database (NEVER trust client)
     let subTotal = 0;
-    const productDetails = [];
+    const itemsForMetadata = [];
 
     for (const item of items) {
       if (!item.product || !item.qty || item.qty <= 0) {
@@ -52,12 +56,11 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
       const itemTotal = price * item.qty;
       subTotal += itemTotal;
 
-      productDetails.push({
-        productId: item.product,
-        name: product.name,
-        price,
-        qty: item.qty,
-        total: itemTotal
+      itemsForMetadata.push({
+        p: item.product,
+        q: item.qty,
+        c: item.color || "",
+        d: item.dimensions || ""
       });
     }
 
@@ -111,19 +114,32 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
     // 3. Generate idempotency key to prevent duplicate charges
     const idempotencyKey = `payment_${userId || 'guest'}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
+    // Prepare metadata for recovery (serialized items and checkout info)
+    const recoveryMetadata = {
+      userId: userId || 'guest',
+      couponCode: couponCode || 'none',
+      itemCount: items.length,
+      subtotal: subTotal.toFixed(2),
+      discount: discountAmount.toFixed(2),
+      // Serialize items (short keys p=product, q=qty, c=color, d=dimensions)
+      items: JSON.stringify(itemsForMetadata).slice(0, 500)
+    };
+
+    // Include shipping/contact if provided (usually for guest)
+    if (guestInfo) {
+      recoveryMetadata.guestInfo = JSON.stringify(guestInfo).slice(0, 500);
+    } else if (shipping && contact) {
+      recoveryMetadata.shipping = JSON.stringify(shipping).slice(0, 500);
+      recoveryMetadata.contact = JSON.stringify(contact).slice(0, 500);
+    }
+
     // 4. Create Stripe Payment Intent
     const paymentIntent = await stripe.paymentIntents.create(
       {
         amount: Math.round(finalTotal * 100), // Convert to cents
         currency,
-        metadata: {
-          userId: userId || 'guest',
-          couponCode: couponCode || 'none',
-          itemCount: items.length,
-          subtotal: subTotal.toFixed(2),
-          discount: discountAmount.toFixed(2),
-        },
-        description: `Order for ${productDetails.length} item(s)`,
+        metadata: recoveryMetadata,
+        description: `Order for ${items.length} item(s)`,
         // Enable automatic payment methods
         automatic_payment_methods: {
           enabled: true,

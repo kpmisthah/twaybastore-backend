@@ -1,11 +1,11 @@
 // config/stripe.js
+// dotenv is loaded by config/env.js (imported first in server.js)
 import Stripe from "stripe";
-import dotenv from "dotenv";
-dotenv.config();
 
 /**
- * Initialize Stripe with proper error handling
- * Validates API key presence and format
+ * Stripe instance — initialized lazily on first use.
+ * This ensures process.env.STRIPE_SECRET_KEY is populated by env.js
+ * before Stripe reads it, regardless of ES module import order.
  */
 function initializeStripe() {
     const secretKey = process.env.STRIPE_SECRET_KEY;
@@ -35,15 +35,13 @@ function initializeStripe() {
 
     try {
         const stripe = new Stripe(secretKey, {
-            apiVersion: "2024-12-18.acacia", // Use latest stable API version
-            maxNetworkRetries: 3, // Retry failed requests
-            timeout: 30000, // 30 second timeout
+            apiVersion: "2024-12-18.acacia",
+            maxNetworkRetries: 3,
+            timeout: 30000,
         });
 
-        // Only log in development
-        if (process.env.NODE_ENV !== "production") {
-            console.log("✅ Stripe initialized successfully (TEST mode)");
-        }
+        const mode = secretKey.startsWith("sk_test_") ? "TEST" : "LIVE";
+        console.log(`✅ Stripe initialized successfully (${mode} mode)`);
 
         return stripe;
     } catch (error) {
@@ -51,6 +49,13 @@ function initializeStripe() {
     }
 }
 
-const stripe = initializeStripe();
+// Lazy singleton — only created when first accessed (after env vars are loaded)
+let _stripe = null;
+const stripe = new Proxy({}, {
+    get(_, prop) {
+        if (!_stripe) _stripe = initializeStripe();
+        return _stripe[prop];
+    }
+});
 
 export default stripe;
