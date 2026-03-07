@@ -34,9 +34,10 @@ const cancelOtps = {}; // { [orderId]: { otpHash, expiresAt, lastSentAt? } }
 router.get("/my-orders/:userId", auth, async (req, res) => {
   try {
     const {
-      status,         // Filter by status
-      startDate,      // Filter by date range
+      status,
+      startDate,
       endDate,
+      q,             // text search: order ID suffix or item name
       page = 1,
       limit = 10
     } = req.query;
@@ -58,6 +59,15 @@ router.get("/my-orders/:userId", auth, async (req, res) => {
         end.setHours(23, 59, 59, 999);
         filter.createdAt.$lte = end;
       }
+    }
+
+    // Text search: match order _id suffix or item name
+    if (q && q.trim()) {
+      const trimmed = q.trim();
+      filter.$or = [
+        { $expr: { $regexMatch: { input: { $toString: "$_id" }, regex: trimmed, options: "i" } } },
+        { "items.name": { $regex: trimmed, $options: "i" } },
+      ];
     }
 
     // Pagination
@@ -112,6 +122,15 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       contact,
       couponCode,
     } = req.body;
+
+    // 🔒 SECURITY: PREVENT DUPLICATE ORDERS (Webhook vs Frontend Race)
+    if (paymentIntentId) {
+      const existing = await Order.findOne({ paymentIntentId });
+      if (existing) {
+        console.log(`ℹ️  Order for ${paymentIntentId} already exists. Skipping duplicate.`);
+        return res.status(200).json(existing);
+      }
+    }
 
     // 🔒 SECURITY: Verify the userId matches the authenticated user
     if (userId && userId !== req.userId.toString()) {
@@ -580,6 +599,15 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
   try {
     const { items, total, paymentIntentId, guestInfo, couponCode } = req.body;
 
+    // 🔒 SECURITY: PREVENT DUPLICATE ORDERS (Webhook vs Frontend Race)
+    if (paymentIntentId) {
+      const existing = await Order.findOne({ paymentIntentId });
+      if (existing) {
+        console.log(`ℹ️  Guest order for ${paymentIntentId} already exists. Skipping duplicate.`);
+        return res.status(200).json(existing);
+      }
+    }
+
     if (
       !guestInfo ||
       !guestInfo.email ||
@@ -709,18 +737,34 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
 
     await order.save();
 
+    // 4️⃣ Decrement stock
     for (const item of fixedItems) {
       const product = await Product.findById(item.product);
       if (!product) continue;
-      const variant = product.variants?.find(
-        (v) =>
-          v.color?.toLowerCase() === item.color?.toLowerCase() &&
-          v.dimensions?.trim() === item.dimensions?.trim()
-      );
-      if (variant) {
-        variant.stock = Math.max(0, (variant.stock || 0) - item.qty);
-        await product.save();
+      if (item.color && item.dimensions && product.variants?.length) {
+        const variant = product.variants.find(
+          (v) =>
+            v.color?.toLowerCase() === item.color?.toLowerCase() &&
+            v.dimensions?.trim() === item.dimensions?.trim()
+        );
+        if (variant) {
+          variant.stock = Math.max(0, (variant.stock || 0) - item.qty);
+          await product.save();
+        }
       }
+    }
+
+    // 🚨 Telegram instant notification for Guest
+    try {
+      await sendTelegramMessage(
+        `🛒 <b>New Guest Order</b>\n` +
+        `Order ID: ${order._id}\n` +
+        `Amount: €${order.finalTotal}\n` +
+        `Customer: ${guestInfo.name}\n` +
+        `Time: ${new Date().toLocaleString()}`
+      );
+    } catch (e) {
+      console.error("Guest Telegram error:", e.message);
     }
 
     try {
