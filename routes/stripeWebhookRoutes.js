@@ -5,7 +5,7 @@ import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import User from "../models/User.js";
 import { sendOrderMail, sendNewOrderAlert } from "../utils/mailer.js";
-import { sendTelegramMessage } from "../utils/telegram.js";
+import { sendTelegramMessage, escapeHTML } from "../utils/telegram.js";
 
 const router = express.Router();
 
@@ -20,7 +20,7 @@ router.post(
     async (req, res) => {
         const sig = req.headers["stripe-signature"];
         const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
+        console.log(webhookSecret, '=webhooksecret')
         if (!webhookSecret) {
             console.error("⚠️  STRIPE_WEBHOOK_SECRET not configured");
             return res.status(500).send("Webhook secret not configured");
@@ -255,7 +255,7 @@ async function handlePaymentFailed(paymentIntent) {
                 `❌ <b>Payment Failed</b>\n` +
                 `Order ID: ${order._id}\n` +
                 `Payment ID: ${paymentIntent.id}\n` +
-                `Reason: ${paymentIntent.last_payment_error?.message || "Unknown"}`
+                `Reason: ${escapeHTML(paymentIntent.last_payment_error?.message || "Unknown")}`
             );
         }
     } catch (error) {
@@ -320,7 +320,7 @@ async function handleDispute(dispute) {
                 `🚨 <b>URGENT: Dispute Created</b>\n` +
                 `Order ID: ${order._id}\n` +
                 `Amount: €${dispute.amount / 100}\n` +
-                `Reason: ${dispute.reason}\n` +
+                `Reason: ${escapeHTML(dispute.reason)}\n` +
                 `Dispute ID: ${dispute.id}\n` +
                 `⚠️ Action required in Stripe Dashboard!`
             );
