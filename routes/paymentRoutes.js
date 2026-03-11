@@ -56,11 +56,20 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
       const itemTotal = price * item.qty;
       subTotal += itemTotal;
 
+      // Enrich variant info if missing
+      let color = item.color || "";
+      let dimensions = item.dimensions || "";
+      if (product.variants?.length && (!color || !dimensions)) {
+        const fallback = product.variants[0];
+        color = color || fallback.color || "";
+        dimensions = dimensions || fallback.dimensions || "";
+      }
+
       itemsForMetadata.push({
         p: item.product,
         q: item.qty,
-        c: item.color || "",
-        d: item.dimensions || ""
+        c: color,
+        d: dimensions
       });
     }
 
