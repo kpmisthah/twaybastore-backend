@@ -2,7 +2,7 @@ import express from "express";
 import crypto from "crypto";
 import stripe from "../config/stripe.js";
 
-import { sendTelegramMessage } from "../utils/telegram.js";
+import { sendTelegramMessage, escapeHTML } from "../utils/telegram.js";
 import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import User from "../models/User.js";
@@ -291,36 +291,36 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       }
     }
 
-    // 2️⃣ Enrich product variants
+    // 2️⃣ Enrich product variants (Populate missing color/dims if variants exist)
     const fixedItems = await Promise.all(
       items.map(async (item) => {
-        if ((item.color && item.dimensions) || !item.product) return item;
+        if (!item.product) return item;
 
-        const product = await Product.findById(item.product);
-        if (
-          !product ||
-          !Array.isArray(product.variants) ||
-          !product.variants.length
-        )
-          return { ...item, dimensions: item.dimensions || "N/A" };
+        const product = await Product.findById(item.product).lean();
+        if (!product || !product.variants?.length)
+          return { ...item, color: item.color || "", dimensions: item.dimensions || "" };
 
+        // Try to match or fallback to first variant
         let variant = null;
-        if (item.variantId) variant = product.variants.id(item.variantId);
-        if (!variant) {
+        if (item.variantId) {
+          variant = product.variants.find(v => v._id?.toString() === item.variantId.toString());
+        }
+
+        if (!variant && (item.color || item.dimensions)) {
           variant = product.variants.find(
             (v) =>
-              (!item.color ||
-                (v.color &&
-                  v.color.toLowerCase() === item.color.toLowerCase())) &&
-              (!item.dimensions ||
-                v.dimensions?.trim() === item.dimensions?.trim())
+              (!item.color || v.color?.toLowerCase() === item.color.toLowerCase()) &&
+              (!item.dimensions || v.dimensions?.trim() === item.dimensions.trim())
           );
         }
 
+        // If still no variant but product MUST have one, pick the first
+        if (!variant) variant = product.variants[0];
+
         return {
           ...item,
-          color: variant?.color || item.color || "",
-          dimensions: variant?.dimensions || item.dimensions || "N/A",
+          color: item.color || variant?.color || "",
+          dimensions: item.dimensions || variant?.dimensions || "",
         };
       })
     );
@@ -349,7 +349,7 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       `Order ID: ${order._id}\n` +
       `Amount: €${order.finalTotal}\n` +
       `Payment: ${order.paymentMethod}\n` +
-      `Customer: ${mergedShipping.name}\n` +
+      `Customer: ${escapeHTML(mergedShipping.name)}\n` +
       `Time: ${new Date().toLocaleString()}`
     );
 
@@ -760,7 +760,7 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
         `🛒 <b>New Guest Order</b>\n` +
         `Order ID: ${order._id}\n` +
         `Amount: €${order.finalTotal}\n` +
-        `Customer: ${guestInfo.name}\n` +
+        `Customer: ${escapeHTML(guestInfo.name)}\n` +
         `Time: ${new Date().toLocaleString()}`
       );
     } catch (e) {
