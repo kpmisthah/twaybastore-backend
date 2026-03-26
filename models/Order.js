@@ -60,7 +60,7 @@ const orderSchema = new mongoose.Schema(
     paymentIntentId: { type: String, index: true }, // Index for faster webhook lookups
     paymentMethod: {
       type: String,
-      enum: ["CARD", "COD"],
+      enum: ["CARD", "COD", "PICKUP"],
       default: "CARD"
     },
     paymentStatus: {
