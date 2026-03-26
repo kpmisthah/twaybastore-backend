@@ -188,11 +188,12 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       }
     }
 
-    // 1️⃣ Normalize COD vs Stripe payment info
+    // 1️⃣ Normalize COD vs Pickup vs Stripe payment info
     const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
+    const isPickup = paymentIntentId && String(paymentIntentId).startsWith("PICKUP-");
 
-    // 🔒 SECURITY: For COD orders, recalculate total from DB prices (NEVER trust client)
-    if (isCOD) {
+    // 🔒 SECURITY: For COD/Pickup orders, recalculate total from DB prices (NEVER trust client)
+    if (isCOD || isPickup) {
       let serverTotal = 0;
       for (const item of items) {
         const product = await Product.findById(item.product);
@@ -220,8 +221,8 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       finalTotal = expectedTotal;
     }
 
-    // 🔒 SECURITY: Verify Stripe Payment if not COD
-    if (!isCOD && paymentIntentId) {
+    // 🔒 SECURITY: Verify Stripe Payment if not COD or Pickup
+    if (!isCOD && !isPickup && paymentIntentId) {
       try {
         // Check if this payment intent was already used
         const existingOrder = await Order.findOne({ paymentIntentId });
@@ -333,10 +334,10 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       finalTotal,
       discountAmount,
       couponCode: couponCode || null,
-      paymentMethod: isCOD ? "COD" : "CARD",
-      isPaid: !isCOD && !!paymentIntentId,
+      paymentMethod: isPickup ? "PICKUP" : (isCOD ? "COD" : "CARD"),
+      isPaid: !isCOD && !isPickup && !!paymentIntentId,
       paymentIntentId: paymentIntentId || undefined,
-      paidAt: !isCOD && paymentIntentId ? new Date() : undefined,
+      paidAt: !isCOD && !isPickup && paymentIntentId ? new Date() : undefined,
       shipping: mergedShipping,
       contact: mergedContact,
     });
@@ -639,9 +640,10 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
     }
 
     const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
+    const isPickup = paymentIntentId && String(paymentIntentId).startsWith("PICKUP-");
 
-    // 🔒 SECURITY: Verify Stripe (Guest)
-    if (!isCOD && paymentIntentId) {
+    // 🔒 SECURITY: Verify Stripe (Guest) if not COD or Pickup
+    if (!isCOD && !isPickup && paymentIntentId) {
       try {
         // Check if this payment intent was already used
         const existingOrder = await Order.findOne({ paymentIntentId });
@@ -727,10 +729,10 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
       finalTotal,
       discountAmount,
       couponCode: couponCode || null,
-      paymentMethod: isCOD ? "COD" : "CARD",
-      isPaid: !isCOD && !!paymentIntentId,
+      paymentMethod: isPickup ? "PICKUP" : (isCOD ? "COD" : "CARD"),
+      isPaid: !isCOD && !isPickup && !!paymentIntentId,
       paymentIntentId: paymentIntentId || undefined,
-      paidAt: !isCOD && paymentIntentId ? new Date() : undefined,
+      paidAt: !isCOD && !isPickup && paymentIntentId ? new Date() : undefined,
       shipping,
       contact,
     });
