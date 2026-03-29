@@ -4,6 +4,7 @@ import Order from "../models/Order.js";
 import { upload } from "../middleware/upload.js";
 // Switched from R2 to Cloudinary (free tier)
 import { uploadToCloudinary } from "../utils/uploadToCloudinary.js";
+import { removeProductRow } from "../utils/googleSheetsService.js";
 const router = express.Router();
 
 /* ---------------------------------------------
@@ -386,14 +387,22 @@ router.put("/:id", async (req, res) => {
 ---------------------------------------------- */
 router.delete("/:id", async (req, res) => {
   try {
+    const product = await Product.findById(req.params.id);
+    if (!product) return res.status(404).json({ message: "Product not found" });
+
+    // Sync with Google Sheets if productCode exists
+    if (product.productCode) {
+      await removeProductRow(product.productCode);
+    }
+
     const deleted = await Product.findByIdAndUpdate(
       req.params.id,
       { isDeleted: true, deletedAt: new Date() },
       { new: true }
     );
-    if (!deleted) return res.status(404).json({ message: "Product not found" });
     res.status(200).json({ message: "Product deleted (soft)" });
   } catch (err) {
+    console.error("Delete product error:", err);
     res.status(500).json({ message: "Error deleting product" });
   }
 });
