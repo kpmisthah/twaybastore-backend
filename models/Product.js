@@ -4,7 +4,6 @@ import mongoose from "mongoose";
 const variantSchema = new mongoose.Schema({
   color: { type: String, required: true },
 
-  // FIXED: dimensions must NOT be required because old products don't have it
   dimensions: { type: String, required: false },
 
   stock: { type: Number, default: 0 },
@@ -25,6 +24,7 @@ const productSchema = new mongoose.Schema(
     discount: { type: Number, default: 0 },
 
     sku: { type: String },
+    productCode: { type: String, unique: true, sparse: true },
     category: { type: String, required: true },
     brand: { type: String },
 
