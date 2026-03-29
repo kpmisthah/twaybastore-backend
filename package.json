@@ -25,6 +25,7 @@
     "express": "^5.1.0",
     "express-rate-limit": "^8.0.1",
     "get-stream": "^9.0.1",
+    "googleapis": "^171.4.0",
     "jest": "^30.0.4",
     "mongoose": "^8.16.4",
     "multer": "^2.0.2",
