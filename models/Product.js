@@ -59,5 +59,26 @@ const productSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Pre-save hook to handle optional productCode
+productSchema.pre("save", function (next) {
+  if (this.productCode === "") {
+    this.productCode = undefined;
+  }
+  next();
+});
+
+// Pre-findOneAndUpdate hook to handle optional productCode on update
+productSchema.pre("findOneAndUpdate", function (next) {
+  const update = this.getUpdate();
+  if (update && update.productCode === "") {
+    // If it's a direct update object
+    update.productCode = undefined;
+  } else if (update && update.$set && update.$set.productCode === "") {
+    // If it's using $set
+    update.$set.productCode = undefined;
+  }
+  next();
+});
+
 const Product = mongoose.model("Product", productSchema);
 export default Product;
