@@ -5,6 +5,7 @@ import { upload } from "../middleware/upload.js";
 // Switched from R2 to Cloudinary (free tier)
 import { uploadToCloudinary } from "../utils/uploadToCloudinary.js";
 import { removeProductRow } from "../utils/googleSheetsService.js";
+import ExcelJS from "exceljs";
 const router = express.Router();
 
 /* ---------------------------------------------
@@ -35,6 +36,65 @@ router.get("/suggestions", async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false });
+  }
+});
+
+/* ---------------------------------------------
+   1.1) EXPORT PRODUCTS TO XLSX
+---------------------------------------------- */
+router.get("/export", async (req, res) => {
+  try {
+    const products = await Product.find({ isDeleted: { $ne: true } }).lean();
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Inventory");
+
+    worksheet.columns = [
+      { header: "Merchant SKU / GTIN", key: "sku", width: 20 },
+      { header: "Item Name", key: "name", width: 30 },
+      { header: "Description", key: "description", width: 40 },
+      { header: "Category", key: "category", width: 20 },
+      { header: "Sub Category", key: "subCategory", width: 20 },
+      { header: "Price", key: "price", width: 10 },
+      { header: "Stock", key: "stock", width: 10 },
+      { header: "Image URL", key: "image", width: 50 },
+    ];
+
+    products.forEach((prod) => {
+      // Calculate total stock from variants
+      let totalStock = 0;
+      if (prod.variants && prod.variants.length > 0) {
+        totalStock = prod.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
+      } else {
+        totalStock = prod.stock || 0;
+      }
+
+      worksheet.addRow({
+        sku: prod.sku || prod.productCode || "",
+        name: prod.name,
+        description: prod.description,
+        category: prod.category,
+        subCategory: prod.subCategory || "",
+        price: prod.price,
+        stock: totalStock,
+        image: prod.images?.[0] || "",
+      });
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=inventory.xlsx"
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error("Export failed:", err);
+    res.status(500).json({ message: "Export failed" });
   }
 });
 
