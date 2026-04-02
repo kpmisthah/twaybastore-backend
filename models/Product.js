@@ -26,6 +26,7 @@ const productSchema = new mongoose.Schema(
     sku: { type: String },
     productCode: { type: String, unique: true, sparse: true },
     category: { type: String, required: true },
+    subCategory: { type: String },
     brand: { type: String },
 
     isDiscounted: { type: Boolean, default: false },
