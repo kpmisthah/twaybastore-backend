@@ -51,7 +51,7 @@ router.get("/export", async (req, res) => {
 
     worksheet.columns = [
       { header: "Merchant SKU / GTIN", key: "sku", width: 20 },
-      { header: "Item Name", key: "name", width: 30 },
+      { header: "Item Name", key: "name", width: 40 },
       { header: "Description", key: "description", width: 40 },
       { header: "Category", key: "category", width: 20 },
       { header: "Sub Category", key: "subCategory", width: 20 },
@@ -61,24 +61,34 @@ router.get("/export", async (req, res) => {
     ];
 
     products.forEach((prod) => {
-      // Calculate total stock from variants
-      let totalStock = 0;
       if (prod.variants && prod.variants.length > 0) {
-        totalStock = prod.variants.reduce((sum, v) => sum + (v.stock || 0), 0);
-      } else {
-        totalStock = prod.stock || 0;
-      }
+        prod.variants.forEach((variant) => {
+          // Construct name with variant details: e.g. "T-Shirt Red M"
+          const variantName = `${prod.name} ${variant.color || ""} ${variant.dimensions || ""}`.trim();
 
-      worksheet.addRow({
-        sku: prod.sku || prod.productCode || "",
-        name: prod.name,
-        description: prod.description,
-        category: prod.category,
-        subCategory: prod.subCategory || "",
-        price: prod.price,
-        stock: totalStock,
-        image: prod.images?.[0] || "",
-      });
+          worksheet.addRow({
+            sku: prod.sku || prod.productCode || "",
+            name: variantName,
+            description: prod.description,
+            category: prod.category,
+            subCategory: prod.subCategory || "",
+            price: variant.price || prod.price,
+            stock: variant.stock || 0,
+            image: (variant.images && variant.images[0]) || (prod.images && prod.images[0]) || "",
+          });
+        });
+      } else {
+        worksheet.addRow({
+          sku: prod.sku || prod.productCode || "",
+          name: prod.name,
+          description: prod.description,
+          category: prod.category,
+          subCategory: prod.subCategory || "",
+          price: prod.price,
+          stock: prod.stock || 0,
+          image: prod.images?.[0] || "",
+        });
+      }
     });
 
     res.setHeader(
