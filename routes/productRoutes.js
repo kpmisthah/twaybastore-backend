@@ -318,6 +318,9 @@ router.get("/", async (req, res) => {
       case 'name':
         sortOption = { name: 1 };
         break;
+      case 'name-desc':
+        sortOption = { name: -1 };
+        break;
       case 'oldest':
         sortOption = { createdAt: 1 };
         break;
