@@ -106,6 +106,12 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
       // Guest logic from orderRoutes: 5% discount
       discountAmount = subTotal * 0.05;
     }
+    // Logic C: Flash Sale / 10-Min Promo (Fixed 5 Euro on >30 Euro)
+    else if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
+      if (subTotal >= 30) {
+        discountAmount = 5;
+      }
+    }
 
     let finalTotal = subTotal - discountAmount;
 

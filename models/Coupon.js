@@ -7,8 +7,9 @@ const CouponSchema = new mongoose.Schema(
     userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true, index: true },
 
     // business rules
-    discountType: { type: String, enum: ["percent"], default: "percent" },
-    value: { type: Number, required: true }, // 5 = 5%
+    discountType: { type: String, enum: ["percent", "fixed"], default: "percent" },
+    value: { type: Number, required: true }, // 5 = 5% or 5 Euro
+    minPurchase: { type: Number, default: 0 },
 
     // lifecycle
     createdAt: { type: Date, default: Date.now },
