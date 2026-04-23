@@ -29,6 +29,51 @@ const OTP_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const cancelOtps = {}; // { [orderId]: { otpHash, expiresAt, lastSentAt? } }
 
 /* -------------------------------------------------------
+   Helpers (Stock)
+------------------------------------------------------- */
+const adjustStock = async (items, direction = "decrement") => {
+  for (const item of items) {
+    try {
+      if (!item.product) continue;
+
+      // item.product might be an ID or a populated object
+      const productId = item.product._id || item.product;
+      const product = await Product.findById(productId);
+      if (!product) {
+        console.warn(`Product not found for adjustment: ${productId}`);
+        continue;
+      }
+
+      const change = direction === "decrement" ? -item.qty : item.qty;
+      console.log(`${direction === 'decrement' ? 'Decrementing' : 'Restoring'} stock for product: ${product.name} (ID: ${product._id}) by ${item.qty}`);
+
+      // 1. Variant adjustment
+      if (item.color && item.dimensions && product.variants?.length) {
+        const variant = product.variants.find(
+          (v) =>
+            v.color?.toLowerCase() === item.color?.toLowerCase() &&
+            v.dimensions?.trim() === item.dimensions?.trim()
+        );
+        if (variant) {
+          variant.stock = Math.max(0, (variant.stock || 0) + change);
+          console.log(`Updated variant [${variant.color} / ${variant.dimensions}] stock to: ${variant.stock}`);
+        } else {
+          console.warn(`Variant not found for product ${product._id} with Color: ${item.color}, Dim: ${item.dimensions}`);
+        }
+      }
+
+      // 2. Base stock adjustment
+      product.stock = Math.max(0, (product.stock || 0) + change);
+      console.log(`Updated base stock to: ${product.stock}`);
+
+      await product.save();
+    } catch (err) {
+      console.error(`Stock adjustment error for ${item.product}:`, err);
+    }
+  }
+};
+
+/* -------------------------------------------------------
    User: Get my orders (with pagination and filters)
 ------------------------------------------------------- */
 router.get("/my-orders/:userId", auth, async (req, res) => {
@@ -182,6 +227,12 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
           console.log(`✅ Applied ${coupon.value}% welcome discount`);
         } else {
           console.log("User already has an order; coupon skipped.");
+        }
+      } else if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
+        if (finalTotal >= 30) {
+          discountAmount = 5;
+          finalTotal = Number((finalTotal - discountAmount).toFixed(2));
+          console.log(`✅ Applied €5 flash offer discount`);
         }
       } else {
         console.log("❌ Invalid or expired coupon:", couponCode);
@@ -362,20 +413,7 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
     }
 
     // 4️⃣ Decrement stock
-    for (const item of fixedItems) {
-      const product = await Product.findById(item.product);
-      if (!product) continue;
-      if (item.color && item.dimensions && product.variants?.length) {
-        const variant = product.variants.find(
-          (v) =>
-            v.color?.toLowerCase() === item.color?.toLowerCase() &&
-            v.dimensions?.trim() === item.dimensions?.trim()
-        );
-        if (variant)
-          variant.stock = Math.max(0, (variant.stock || 0) - item.qty);
-      }
-      await product.save();
-    }
+    await adjustStock(fixedItems, "decrement");
 
     // 5️⃣ Emails
     if (user?.email) {
@@ -482,6 +520,11 @@ router.put("/:orderId/status", requireAdmin, async (req, res) => {
       });
     }
 
+    if (order.status !== "Cancelled" && status === "Cancelled") {
+      await adjustStock(order.items, "increment");
+      console.log(`Inventory restored for order ${order._id} (Admin Cancel)`);
+    }
+
     order.status = status;
     await order.save();
     res.json(order);
@@ -576,6 +619,9 @@ router.post("/:orderId/cancel", async (req, res) => {
     order.status = "Cancelled";
     order.cancelReason = reason || "";
     await order.save();
+
+    // Restore stock
+    await adjustStock(order.items, "increment");
 
     if (order.user?.email) {
       try {
@@ -740,21 +786,7 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
     await order.save();
 
     // 4️⃣ Decrement stock
-    for (const item of fixedItems) {
-      const product = await Product.findById(item.product);
-      if (!product) continue;
-      if (item.color && item.dimensions && product.variants?.length) {
-        const variant = product.variants.find(
-          (v) =>
-            v.color?.toLowerCase() === item.color?.toLowerCase() &&
-            v.dimensions?.trim() === item.dimensions?.trim()
-        );
-        if (variant) {
-          variant.stock = Math.max(0, (variant.stock || 0) - item.qty);
-          await product.save();
-        }
-      }
-    }
+    await adjustStock(fixedItems, "decrement");
 
     // 🚨 Telegram instant notification for Guest
     try {

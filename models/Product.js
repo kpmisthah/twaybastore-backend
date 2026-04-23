@@ -22,6 +22,8 @@ const productSchema = new mongoose.Schema(
     realPrice: { type: Number },
     price: { type: Number, required: true },
     discount: { type: Number, default: 0 },
+    stock: { type: Number, default: 0 },
+    offerExpiry: { type: Date },
 
     sku: { type: String },
     productCode: { type: String, unique: true, sparse: true },

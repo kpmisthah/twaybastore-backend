@@ -146,6 +146,15 @@ io.on("connection", (socket) => {
     }
   });
 
+  // --- Real-time Cart Notifications ---
+  socket.on("add-to-cart", (data) => {
+    // data can include productName, user, etc.
+    io.emit("cart-notification", {
+      ...data,
+      timestamp: new Date(),
+    });
+  });
+
   socket.on("disconnect", () => {
     waitingUsers = waitingUsers.filter((u) => u.socketId !== socket.id);
     const partnerId = activeChats[socket.id];
