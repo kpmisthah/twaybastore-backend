@@ -230,9 +230,18 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
         }
       } else if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
         if (finalTotal >= 30) {
-          discountAmount = 5;
-          finalTotal = Number((finalTotal - discountAmount).toFixed(2));
-          console.log(`✅ Applied €5 flash offer discount`);
+          const usedAlready = await Order.exists({
+            user: userId,
+            couponCode: "TWAYBA5",
+            status: { $ne: "Cancelled" }
+          });
+          if (!usedAlready) {
+            discountAmount = 5;
+            finalTotal = Number((finalTotal - discountAmount).toFixed(2));
+            console.log(`✅ Applied €5 flash offer discount`);
+          } else {
+            console.log("⚠️ TWAYBA5 already used by this user.");
+          }
         }
       } else {
         console.log("❌ Invalid or expired coupon:", couponCode);
@@ -678,9 +687,19 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
       return res.status(400).json({ message: "Invalid email address" });
     }
 
-    let discountAmount = 0;
-    let finalTotal = Number(total);
-    if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
+    if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
+      if (finalTotal >= 30) {
+        const usedAlready = await Order.exists({
+          "shipping.email": guestInfo.email,
+          couponCode: "TWAYBA5",
+          status: { $ne: "Cancelled" }
+        });
+        if (!usedAlready) {
+          discountAmount = 5;
+          finalTotal = Number((finalTotal - discountAmount).toFixed(2));
+        }
+      }
+    } else if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
       discountAmount = Number((finalTotal * 0.05).toFixed(2));
       finalTotal = Number((finalTotal - discountAmount).toFixed(2));
     }
