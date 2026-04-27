@@ -84,6 +84,9 @@ const orderSchema = new mongoose.Schema(
 
     // Idempotency key for preventing duplicate orders
     idempotencyKey: { type: String, unique: true, sparse: true },
+
+    deliveryRegion: { type: String, default: "Malta" },
+    deliveryMethod: { type: String, default: "Shipping" },
   },
   { timestamps: true }
 );

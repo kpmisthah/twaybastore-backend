@@ -165,6 +165,8 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       paymentIntentId,
       shipping,
       contact,
+      deliveryRegion,
+      deliveryMethod,
       couponCode,
     } = req.body;
 
@@ -248,6 +250,36 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       }
     }
 
+    /* -------------------------------------------------------
+       🚚 Delivery Logic
+    ------------------------------------------------------- */
+    let deliveryCharge = 0;
+    const isGozo = deliveryRegion === "Gozo";
+    // Recalculate subtotal for delivery threshold validation
+    let subTotalForDelivery = 0;
+    for (const item of items) {
+      const product = await Product.findById(item.product);
+      if (product) {
+        let price = product.price;
+        if (item.color && item.dimensions && product.variants?.length) {
+          const variant = product.variants.find(v =>
+            v.color?.toLowerCase() === item.color?.toLowerCase() &&
+            v.dimensions?.trim() === item.dimensions?.trim()
+          );
+          if (variant?.price) price = variant.price;
+        }
+        subTotalForDelivery += price * item.qty;
+      }
+    }
+
+    if (isPickup || deliveryMethod === "Pickup") {
+      deliveryCharge = 0;
+    } else if (isGozo) {
+      deliveryCharge = subTotalForDelivery >= 70 ? 0 : 10;
+    } else {
+      deliveryCharge = subTotalForDelivery >= 35 ? 0 : 5; // Malta tiered
+    }
+
     // 1️⃣ Normalize COD vs Pickup vs Stripe payment info
     const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
     const isPickup = paymentIntentId && String(paymentIntentId).startsWith("PICKUP-");
@@ -270,7 +302,7 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
         }
         serverTotal += price * item.qty;
       }
-      const expectedTotal = Number((serverTotal - discountAmount).toFixed(2));
+      const expectedTotal = Number((serverTotal - discountAmount + deliveryCharge).toFixed(2));
       if (Math.abs(expectedTotal - Number(total)) > 1) {
         console.error(`COD price mismatch: Client sent ${total}, Server calculated ${expectedTotal}`);
         return res.status(400).json({
@@ -279,6 +311,12 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
         });
       }
       finalTotal = expectedTotal;
+    } else {
+      // For Stripe, we still want to ensure the finalTotal we use for verification includes delivery
+      // Actually total from body SHOULD already have it, but let's be explicit.
+      // Recalculate what the total SHOULD be to compare with Stripe
+      const serverSubTotal = items.reduce((sum, item) => sum + (item.price * item.qty), 0); // We already have subTotalForDelivery
+      finalTotal = Number((subTotalForDelivery - discountAmount + deliveryCharge).toFixed(2));
     }
 
     // 🔒 SECURITY: Verify Stripe Payment if not COD or Pickup
@@ -400,6 +438,7 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       paidAt: !isCOD && !isPickup && paymentIntentId ? new Date() : undefined,
       shipping: mergedShipping,
       contact: mergedContact,
+      deliveryRegion: deliveryRegion || "Malta",
     });
 
     await order.save();
@@ -653,7 +692,7 @@ router.post("/:orderId/cancel", async (req, res) => {
 ------------------------------------------------------- */
 router.post("/guest", orderRateLimiter, async (req, res) => {
   try {
-    const { items, total, paymentIntentId, guestInfo, couponCode } = req.body;
+    const { items, total, paymentIntentId, guestInfo, couponCode, deliveryRegion, deliveryMethod } = req.body;
 
     // 🔒 SECURITY: PREVENT DUPLICATE ORDERS (Webhook vs Frontend Race)
     if (paymentIntentId) {
@@ -687,6 +726,26 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
       return res.status(400).json({ message: "Invalid email address" });
     }
 
+    // 🔒 SECURITY: Recalculate total for guest (NEVER trust client)
+    let guestSubTotal = 0;
+    for (const item of items) {
+      const product = await Product.findById(item.product);
+      if (product) {
+        let price = product.price;
+        if (item.color && item.dimensions && product.variants?.length) {
+          const variant = product.variants.find(v =>
+            v.color?.toLowerCase() === item.color?.toLowerCase() &&
+            v.dimensions?.trim() === item.dimensions?.trim()
+          );
+          if (variant?.price) price = variant.price;
+        }
+        guestSubTotal += price * item.qty;
+      }
+    }
+
+    let discountAmount = 0;
+    let finalTotal = guestSubTotal;
+
     if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
       if (finalTotal >= 30) {
         const usedAlready = await Order.exists({
@@ -700,9 +759,23 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
         }
       }
     } else if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
-      discountAmount = Number((finalTotal * 0.05).toFixed(2));
-      finalTotal = Number((finalTotal - discountAmount).toFixed(2));
+      discountAmount = Number((guestSubTotal * 0.05).toFixed(2));
     }
+
+    /* -------------------------------------------------------
+       🚚 Delivery Logic (Guest)
+    ------------------------------------------------------- */
+    let deliveryCharge = 0;
+    const isGozo = deliveryRegion === "Gozo";
+    if (isPickup || deliveryMethod === "Pickup") {
+      deliveryCharge = 0;
+    } else if (isGozo) {
+      deliveryCharge = guestSubTotal >= 70 ? 0 : 10;
+    } else {
+      deliveryCharge = guestSubTotal >= 35 ? 0 : 5; // Malta tiered
+    }
+
+    finalTotal = Number((guestSubTotal - discountAmount + deliveryCharge).toFixed(2));
 
     const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
     const isPickup = paymentIntentId && String(paymentIntentId).startsWith("PICKUP-");
@@ -800,6 +873,8 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
       paidAt: !isCOD && !isPickup && paymentIntentId ? new Date() : undefined,
       shipping,
       contact,
+      deliveryRegion: deliveryRegion || "Malta",
+      deliveryMethod: deliveryMethod || "Shipping",
     });
 
     await order.save();

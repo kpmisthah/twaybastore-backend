@@ -14,7 +14,7 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
     const keyInUse = process.env.STRIPE_SECRET_KEY;
     console.log("🔑 STRIPE KEY IN USE:", keyInUse?.slice(0, 20), "...");
 
-    const { items, currency = "eur", couponCode, userId, shipping, contact, guestInfo } = req.body;
+    const { items, currency = "eur", deliveryRegion, deliveryMethod, couponCode, userId, shipping, contact, guestInfo } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: "No items provided" });
@@ -125,7 +125,16 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
       }
     }
 
-    let finalTotal = subTotal - discountAmount;
+    let deliveryCharge = 0;
+    if (deliveryMethod === "Pickup") {
+      deliveryCharge = 0;
+    } else if (deliveryRegion === "Gozo") {
+      deliveryCharge = subTotal >= 70 ? 0 : 10;
+    } else {
+      deliveryCharge = subTotal >= 35 ? 0 : 5; // Malta tiered
+    }
+
+    let finalTotal = subTotal + deliveryCharge - discountAmount;
 
     // Ensure at least 50 cents for Stripe (minimum charge amount)
     if (finalTotal < 0.50) {
@@ -147,7 +156,10 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
       couponCode: couponCode || 'none',
       itemCount: items.length,
       subtotal: subTotal.toFixed(2),
+      delivery: deliveryCharge.toFixed(2),
       discount: discountAmount.toFixed(2),
+      region: deliveryRegion || "Malta",
+      method: deliveryMethod || "Shipping",
       // Serialize items (short keys p=product, q=qty, c=color, d=dimensions)
       items: JSON.stringify(itemsForMetadata).slice(0, 500)
     };
@@ -180,7 +192,7 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
     // Log for debugging (only in development)
     if (process.env.NODE_ENV !== "production") {
       console.log(`Payment Intent Created: ${paymentIntent.id}`);
-      console.log(`Items: ${items.length}, Subtotal: €${subTotal}, Discount: €${discountAmount}, Final: €${finalTotal}`);
+      console.log(`Items: ${items.length}, Subtotal: €${subTotal}, Delivery: €${deliveryCharge}, Discount: €${discountAmount}, Final: €${finalTotal}`);
     }
 
     res.json({
@@ -188,6 +200,7 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
       paymentIntentId: paymentIntent.id,
       amount: finalTotal,
       subtotal: subTotal,
+      delivery: deliveryCharge,
       discount: discountAmount,
       idempotencyKey, // Send back for order creation
     });
