@@ -231,7 +231,7 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
           console.log("User already has an order; coupon skipped.");
         }
       } else if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
-        if (finalTotal >= 30) {
+        if (finalTotal >= 40) {
           const usedAlready = await Order.exists({
             user: userId,
             couponCode: "TWAYBA5",
@@ -747,7 +747,7 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
     let finalTotal = guestSubTotal;
 
     if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
-      if (finalTotal >= 30) {
+      if (finalTotal >= 40) {
         const usedAlready = await Order.exists({
           "shipping.email": guestInfo.email,
           couponCode: "TWAYBA5",
