@@ -108,7 +108,7 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
     }
     // Logic C: Flash Sale / 10-Min Promo (Fixed 5 Euro on >30 Euro)
     else if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
-      if (subTotal >= 30) {
+      if (subTotal >= 40) {
         // 🔒 SECURITY: Verify single-use for TWAYBA5
         const userQuery = userId ? { user: userId } : { "shipping.email": contact?.email || shipping?.email || guestInfo?.email };
         const alreadyUsed = await Order.exists({
