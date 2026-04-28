@@ -253,6 +253,9 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
     /* -------------------------------------------------------
        🚚 Delivery Logic
     ------------------------------------------------------- */
+    const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
+    const isPickup = paymentIntentId && String(paymentIntentId).startsWith("PICKUP-");
+
     let deliveryCharge = 0;
     const isGozo = deliveryRegion === "Gozo";
     // Recalculate subtotal for delivery threshold validation
@@ -281,8 +284,6 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
     }
 
     // 1️⃣ Normalize COD vs Pickup vs Stripe payment info
-    const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
-    const isPickup = paymentIntentId && String(paymentIntentId).startsWith("PICKUP-");
 
     // 🔒 SECURITY: For COD/Pickup orders, recalculate total from DB prices (NEVER trust client)
     if (isCOD || isPickup) {
@@ -765,6 +766,9 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
     /* -------------------------------------------------------
        🚚 Delivery Logic (Guest)
     ------------------------------------------------------- */
+    const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
+    const isPickup = paymentIntentId && String(paymentIntentId).startsWith("PICKUP-");
+
     let deliveryCharge = 0;
     const isGozo = deliveryRegion === "Gozo";
     if (isPickup || deliveryMethod === "Pickup") {
@@ -776,9 +780,6 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
     }
 
     finalTotal = Number((guestSubTotal - discountAmount + deliveryCharge).toFixed(2));
-
-    const isCOD = paymentIntentId && String(paymentIntentId).startsWith("COD-");
-    const isPickup = paymentIntentId && String(paymentIntentId).startsWith("PICKUP-");
 
     // 🔒 SECURITY: Verify Stripe (Guest) if not COD or Pickup
     if (!isCOD && !isPickup && paymentIntentId) {
