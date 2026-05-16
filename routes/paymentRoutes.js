@@ -106,24 +106,7 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
       // Guest logic from orderRoutes: 5% discount
       discountAmount = subTotal * 0.05;
     }
-    // Logic C: Flash Sale / 10-Min Promo (Fixed 5 Euro on >30 Euro)
-    else if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
-      if (subTotal >= 40) {
-        // 🔒 SECURITY: Verify single-use for TWAYBA5
-        const userQuery = userId ? { user: userId } : { "shipping.email": contact?.email || shipping?.email || guestInfo?.email };
-        const alreadyUsed = await Order.exists({
-          ...userQuery,
-          couponCode: "TWAYBA5",
-          status: { $ne: "Cancelled" }
-        });
 
-        if (!alreadyUsed) {
-          discountAmount = 5;
-        } else {
-          console.log(`⚠️  User/Email already used TWAYBA5 coupon code. Skipping discount.`);
-        }
-      }
-    }
 
     let deliveryCharge = 0;
     if (deliveryMethod === "Pickup") {

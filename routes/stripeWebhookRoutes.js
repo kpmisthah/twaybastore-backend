@@ -98,13 +98,26 @@ async function handlePaymentSuccess(paymentIntent) {
                 // Fetch full product details for the order
                 const items = await Promise.all(itemsParsed.map(async (it) => {
                     const product = await Product.findById(it.p);
+                    
+                    let itemPrice = product?.price || 0;
+                    if (product && product.variants?.length) {
+                        const variant = product.variants.find(
+                            (v) =>
+                                (v.color || "").toLowerCase() === (it.c || "").toLowerCase() &&
+                                (v.dimensions || "").trim() === (it.d || "").trim()
+                        );
+                        if (variant && variant.price !== undefined) {
+                            itemPrice = variant.price;
+                        }
+                    }
+                    
                     return {
                         product: it.p,
                         qty: it.q,
                         color: it.c,
                         dimensions: it.d,
                         name: product?.name || "Product",
-                        price: product?.price || 0,
+                        price: itemPrice,
                         image: product?.images?.[0] || ""
                     };
                 }));

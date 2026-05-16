@@ -230,21 +230,7 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
         } else {
           console.log("User already has an order; coupon skipped.");
         }
-      } else if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
-        if (finalTotal >= 40) {
-          const usedAlready = await Order.exists({
-            user: userId,
-            couponCode: "TWAYBA5",
-            status: { $ne: "Cancelled" }
-          });
-          if (!usedAlready) {
-            discountAmount = 5;
-            finalTotal = Number((finalTotal - discountAmount).toFixed(2));
-            console.log(`✅ Applied €5 flash offer discount`);
-          } else {
-            console.log("⚠️ TWAYBA5 already used by this user.");
-          }
-        }
+
       } else {
         console.log("❌ Invalid or expired coupon:", couponCode);
       }
@@ -747,19 +733,7 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
     let discountAmount = 0;
     let finalTotal = guestSubTotal;
 
-    if (couponCode && String(couponCode).toUpperCase() === "TWAYBA5") {
-      if (finalTotal >= 40) {
-        const usedAlready = await Order.exists({
-          "shipping.email": guestInfo.email,
-          couponCode: "TWAYBA5",
-          status: { $ne: "Cancelled" }
-        });
-        if (!usedAlready) {
-          discountAmount = 5;
-          finalTotal = Number((finalTotal - discountAmount).toFixed(2));
-        }
-      }
-    } else if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
+if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
       discountAmount = Number((guestSubTotal * 0.05).toFixed(2));
     }
 
