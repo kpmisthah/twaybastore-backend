@@ -244,6 +244,13 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
 
     let deliveryCharge = 0;
     const isGozo = deliveryRegion === "Gozo";
+
+    // 🔒 SECURITY: Prevent COD for Gozo orders
+    if (isCOD && isGozo) {
+      return res.status(400).json({
+        message: "Cash on Delivery (COD) is not available for Gozo orders. Please pay with card."
+      });
+    }
     // Recalculate subtotal for delivery threshold validation
     let subTotalForDelivery = 0;
     for (const item of items) {
