@@ -161,7 +161,9 @@ router.post("/create-payment", paymentRateLimiter, async (req, res) => {
         amount: Math.round(finalTotal * 100), // Convert to cents
         currency,
         metadata: recoveryMetadata,
-        description: `Order for ${items.length} item(s)`,
+        description: `Twayba Order for ${items.length} item(s)`,
+        statement_descriptor: 'Twayba',
+        statement_descriptor_suffix: 'Twayba',
         // Enable automatic payment methods
         automatic_payment_methods: {
           enabled: true,
