@@ -2,6 +2,7 @@
 import express from "express";
 import StoreInventory from "../models/StoreInventory.js";
 import Product from "../models/Product.js";
+import ExcelJS from "exceljs";
 
 const router = express.Router();
 
@@ -38,7 +39,7 @@ router.get("/", async (req, res) => {
     const total = filtered.length;
     const paginated = filtered.slice((pageNum - 1) * limitNum, pageNum * limitNum);
 
-    res.json({ 
+    res.json({
       records: paginated,
       total,
       page: pageNum,
@@ -49,6 +50,85 @@ router.get("/", async (req, res) => {
     res
       .status(500)
       .json({ message: "Failed to fetch store inventory", error: err.message });
+  }
+});
+
+// ─── GET /api/admin/store-inventory/export ───
+router.get("/export", async (req, res) => {
+  try {
+    const { q, tab, hideEmpty } = req.query;
+    
+    const records = await StoreInventory.find()
+      .populate("product", "name images variants category productCode")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    let filtered = records.filter((r) => r.product);
+
+    if (q) {
+      const searchLower = q.toLowerCase();
+      filtered = filtered.filter(
+        (r) =>
+          r.product.name?.toLowerCase().includes(searchLower) ||
+          r.variant?.toLowerCase().includes(searchLower)
+      );
+    }
+
+    if (tab && tab !== 'master' && hideEmpty === 'true') {
+      filtered = filtered.filter(r => (r.locations?.[tab] || 0) > 0);
+    }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Inventory");
+
+    if (tab === "master") {
+      worksheet.columns = [
+        { header: "Product Name", key: "name", width: 40 },
+        { header: "Variant", key: "variant", width: 20 },
+        { header: "Downstairs Qty", key: "downstairs", width: 15 },
+        { header: "Upstairs Qty", key: "upstairs", width: 15 },
+        { header: "Store Qty", key: "store", width: 15 },
+        { header: "Garage Qty", key: "garage", width: 15 },
+        { header: "Total Qty", key: "total", width: 15 }
+      ];
+
+      filtered.forEach(r => {
+        const total = ["downstairs", "upstairs", "store", "garage"].reduce((s, l) => s + (r.locations?.[l] || 0), 0);
+        worksheet.addRow({
+          name: r.product?.name || "Unknown",
+          variant: r.variant === "default" ? "Standard" : r.variant,
+          downstairs: r.locations?.downstairs || 0,
+          upstairs: r.locations?.upstairs || 0,
+          store: r.locations?.store || 0,
+          garage: r.locations?.garage || 0,
+          total: total
+        });
+      });
+    } else {
+      const tabName = tab.charAt(0).toUpperCase() + tab.slice(1);
+      worksheet.columns = [
+        { header: "Product Name", key: "name", width: 40 },
+        { header: "Variant", key: "variant", width: 20 },
+        { header: `${tabName} Qty`, key: "qty", width: 15 }
+      ];
+
+      filtered.forEach(r => {
+        worksheet.addRow({
+          name: r.product?.name || "Unknown",
+          variant: r.variant === "default" ? "Standard" : r.variant,
+          qty: r.locations?.[tab] || 0
+        });
+      });
+    }
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename=Inventory_${tab}_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error("Export error:", err);
+    res.status(500).json({ success: false, message: "Export failed" });
   }
 });
 
@@ -93,7 +173,7 @@ router.get("/master-sheet", async (req, res) => {
     const total = masterData.length;
     const paginated = masterData.slice((pageNum - 1) * limitNum, pageNum * limitNum);
 
-    res.json({ 
+    res.json({
       records: paginated,
       total,
       page: pageNum,
