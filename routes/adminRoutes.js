@@ -6,6 +6,7 @@ import Product from "../models/Product.js";
 import Order from "../models/Order.js";
 import { sendBroadcastEmail } from "../utils/mailer.js";
 import User from "../models/User.js"; // 👈 add this at the top with other imports
+import stripe from "../config/stripe.js";
 
 const categoryLabels = [
   "Home & Kitchen",
@@ -109,6 +110,79 @@ router.post("/send-broadcast", async (req, res) => {
     });
   }
 });
+
+// GET /admin/abandoned-checkouts - get users who clicked place order but failed payment
+router.get("/abandoned-checkouts", async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    
+    // Fetch recent payment intents from Stripe
+    // We fetch a larger batch because we need to filter them in memory
+    const intents = await stripe.paymentIntents.list({ limit: 100 });
+    
+    // Filter for incomplete ones
+    const incomplete = intents.data.filter(pi => 
+      pi.status === 'requires_payment_method' || 
+      pi.status === 'requires_action' ||
+      pi.status === 'canceled'
+    );
+
+    // Map to the format frontend expects
+    const mappedOrders = await Promise.all(incomplete.map(async (pi) => {
+      let contact = {};
+      let shipping = {};
+      let items = [];
+
+      try {
+        if (pi.metadata.contact) contact = JSON.parse(pi.metadata.contact);
+        if (pi.metadata.shipping) shipping = JSON.parse(pi.metadata.shipping);
+        
+        if (pi.metadata.items) {
+          const rawItems = JSON.parse(pi.metadata.items);
+          items = await Promise.all(rawItems.map(async (item) => {
+            const product = await Product.findById(item.p).select('name images').lean();
+            return {
+              name: product ? product.name : "Unknown Product",
+              image: product && product.images && product.images.length > 0 ? product.images[0] : "",
+              qty: item.q,
+              color: item.c
+            };
+          }));
+        }
+      } catch (e) {
+        console.error("Error parsing metadata for PI", pi.id, e);
+      }
+
+      return {
+        _id: pi.id,
+        contact,
+        shipping,
+        total: pi.amount / 100,
+        paymentStatus: pi.status === 'requires_payment_method' ? 'incomplete' : pi.status,
+        createdAt: new Date(pi.created * 1000),
+        items
+      };
+    }));
+
+    // Pagination in memory
+    const total = mappedOrders.length;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + parseInt(limit);
+    const paginated = mappedOrders.slice(startIndex, endIndex);
+
+    res.json({
+      success: true,
+      data: paginated,
+      total,
+      page: parseInt(page),
+      totalPages: Math.ceil(total / limit)
+    });
+  } catch (err) {
+    console.error("❌ Fetch abandoned checkouts error:", err);
+    res.status(500).json({ success: false, message: "Failed to fetch abandoned checkouts" });
+  }
+});
+
 
 // GET /admin/orders - get all orders for admin with pagination, search, and filters
 router.get("/orders", async (req, res) => {
