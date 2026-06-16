@@ -9,7 +9,7 @@ const router = express.Router();
 // Fetch all store inventory records with product details
 router.get("/", async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, page = 1, limit = 10, tab, hideEmpty } = req.query;
 
     const records = await StoreInventory.find()
       .populate("product", "name images variants category productCode")
@@ -29,7 +29,21 @@ router.get("/", async (req, res) => {
       );
     }
 
-    res.json({ records: filtered });
+    if (tab && tab !== 'master' && hideEmpty === 'true') {
+      filtered = filtered.filter(r => (r.locations?.[tab] || 0) > 0);
+    }
+
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 10;
+    const total = filtered.length;
+    const paginated = filtered.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+
+    res.json({ 
+      records: paginated,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum)
+    });
   } catch (err) {
     console.error("Store inventory fetch error:", err);
     res
@@ -42,7 +56,7 @@ router.get("/", async (req, res) => {
 // Aggregated view: total qty per product/variant across all locations
 router.get("/master-sheet", async (req, res) => {
   try {
-    const { q } = req.query;
+    const { q, page = 1, limit = 10 } = req.query;
 
     const records = await StoreInventory.find()
       .populate("product", "name images variants category productCode")
@@ -74,7 +88,17 @@ router.get("/master-sheet", async (req, res) => {
         (r.locations.garage || 0),
     }));
 
-    res.json({ records: masterData });
+    const pageNum = parseInt(page) || 1;
+    const limitNum = parseInt(limit) || 10;
+    const total = masterData.length;
+    const paginated = masterData.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+
+    res.json({ 
+      records: paginated,
+      total,
+      page: pageNum,
+      totalPages: Math.ceil(total / limitNum)
+    });
   } catch (err) {
     console.error("Master sheet error:", err);
     res
