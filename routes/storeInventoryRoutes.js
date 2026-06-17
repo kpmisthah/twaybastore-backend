@@ -244,11 +244,22 @@ router.post("/bulk-init", async (req, res) => {
       if (prod.variants && prod.variants.length > 0) {
         // Create one record per variant
         for (const v of prod.variants) {
-          const variantLabel = v.color || v.size || v._id.toString();
-          const exists = await StoreInventory.findOne({
+          const variantLabel = [v.color, v.dimensions].filter(Boolean).join(" - ") || v._id.toString();
+          
+          // Prefer matching by variantId since variant labels can change
+          let exists = await StoreInventory.findOne({
             product: prod._id,
-            variant: variantLabel,
+            variantId: v._id.toString(),
           });
+          
+          // Fallback to name if variantId wasn't previously populated
+          if (!exists) {
+            exists = await StoreInventory.findOne({
+              product: prod._id,
+              variant: variantLabel,
+            });
+          }
+          
           if (!exists) {
             await StoreInventory.create({
               product: prod._id,
@@ -258,6 +269,11 @@ router.post("/bulk-init", async (req, res) => {
             });
             created++;
           } else {
+            // Update the label just in case it was updated in Product
+            if (exists.variant !== variantLabel) {
+              exists.variant = variantLabel;
+              await exists.save();
+            }
             skipped++;
           }
         }
