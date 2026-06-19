@@ -280,6 +280,77 @@ router.get("/search", async (req, res) => {
   }
 });
 
+/* ----------------------- GET /analytics/revenue ------------------------ */
+router.get("/revenue", async (req, res) => {
+  try {
+    const pipeline = [
+      {
+        $match: {
+          status: { $ne: "Cancelled" }, // exclude cancelled orders
+        }
+      },
+      {
+        $group: {
+          _id: {
+            date: { 
+              $ifNull: [
+                "$businessDate", 
+                { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } }
+              ] 
+            },
+            channel: { $ifNull: ["$channel", "website"] }
+          },
+          revenue: { $sum: { $ifNull: ["$finalTotal", "$total"] } },
+          orders: { $sum: 1 }
+        }
+      },
+      {
+        $group: {
+          _id: "$_id.date",
+          channels: {
+            $push: {
+              channel: "$_id.channel",
+              revenue: "$revenue",
+              orders: "$orders"
+            }
+          },
+          dailyTotal: { $sum: "$revenue" },
+          totalOrders: { $sum: "$orders" }
+        }
+      },
+      { $sort: { "_id": -1 } }, // latest first
+      { $limit: 30 } // last 30 business dates
+    ];
+
+    const results = await Order.aggregate(pipeline);
+    
+    // Transform array to a cleaner format
+    const formatted = results.map(r => {
+      const channelData = { website: 0, shop: 0, wolt: 0 };
+      r.channels.forEach(c => {
+        const ch = c.channel.toLowerCase();
+        if (channelData[ch] !== undefined) {
+          channelData[ch] = c.revenue;
+        } else {
+          // If a weird channel exists, just sum it into website
+          channelData.website += c.revenue;
+        }
+      });
+      return {
+        date: r._id || "Unknown Date",
+        total: r.dailyTotal,
+        orders: r.totalOrders,
+        channels: channelData
+      };
+    });
+
+    res.json(formatted);
+  } catch (err) {
+    console.error("Revenue analytics error:", err);
+    res.status(500).json({ message: "Failed to fetch revenue analytics" });
+  }
+});
+
 /* ----------------------- GET /analytics/top-products ------------------------ */
 router.get("/top-products", async (req, res) => {
   try {
