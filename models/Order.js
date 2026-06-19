@@ -39,6 +39,12 @@ const orderSchema = new mongoose.Schema(
         product: { type: mongoose.Schema.Types.ObjectId, ref: "Product" },
         color: String,
         dimensions: String,
+        fulfilledLocations: [
+          {
+            location: { type: String, enum: ["downstairs", "upstairs", "store", "garage"] },
+            quantity: { type: Number, default: 0 }
+          }
+        ],
       },
     ],
 
@@ -48,6 +54,7 @@ const orderSchema = new mongoose.Schema(
       enum: ["Processing", "Packed", "Delivered", "Cancelled", "Shipped"],
       default: "Processing",
     },
+    isFulfilled: { type: Boolean, default: false },
     cancelReason: { type: String },
 
     // Persisted shipping/contact info
@@ -60,7 +67,7 @@ const orderSchema = new mongoose.Schema(
     paymentIntentId: { type: String, index: true }, // Index for faster webhook lookups
     paymentMethod: {
       type: String,
-      enum: ["CARD", "COD", "PICKUP"],
+      enum: ["CARD", "COD", "PICKUP", "CASH"],
       default: "CARD"
     },
     paymentStatus: {
@@ -87,6 +94,17 @@ const orderSchema = new mongoose.Schema(
 
     deliveryRegion: { type: String, default: "Malta" },
     deliveryMethod: { type: String, default: "Shipping" },
+    
+    // Revenue Categorization & Tracking
+    channel: {
+      type: String,
+      enum: ["website", "wolt", "shop"],
+      default: "website",
+    },
+    businessDate: {
+      type: String, // YYYY-MM-DD (calculated dynamically for 7 PM Malta rule)
+      index: true,
+    },
   },
   { timestamps: true }
 );
