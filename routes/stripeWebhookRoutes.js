@@ -6,6 +6,7 @@ import Product from "../models/Product.js";
 import User from "../models/User.js";
 import { sendOrderMail, sendNewOrderAlert } from "../utils/mailer.js";
 import { sendTelegramMessage, escapeHTML } from "../utils/telegram.js";
+import { getMaltaBusinessDate } from "../utils/businessDate.js";
 
 const router = express.Router();
 
@@ -179,6 +180,7 @@ async function handlePaymentSuccess(paymentIntent) {
                     paymentStatus: "succeeded",
                     shipping,
                     contact,
+                    businessDate: getMaltaBusinessDate(),
                 });
 
                 await order.save();
