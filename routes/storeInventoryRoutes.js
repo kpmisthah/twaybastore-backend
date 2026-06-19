@@ -3,6 +3,9 @@ import express from "express";
 import StoreInventory from "../models/StoreInventory.js";
 import Product from "../models/Product.js";
 import ExcelJS from "exceljs";
+import InventoryLog from "../models/InventoryLog.js";
+import Order from "../models/Order.js";
+import { getMaltaBusinessDate } from "../utils/businessDate.js";
 
 const router = express.Router();
 
@@ -229,6 +232,165 @@ router.put("/:id", async (req, res) => {
     res
       .status(500)
       .json({ message: "Failed to update inventory", error: err.message });
+  }
+});
+
+// ─── POST /api/admin/store-inventory/action ───
+// Handle strict inventory movements (Add, Move, Sell, Adjust)
+router.post("/action", async (req, res) => {
+  try {
+    const {
+      productId,
+      variantId, // optional
+      actionType, // 'add_stock', 'move', 'sale', 'adjustment'
+      fromLocation,
+      toLocation,
+      quantity,
+      channel, // 'wolt', 'shop'
+      price // optional, for sale
+    } = req.body;
+
+    const qty = parseInt(quantity);
+    if (!qty || qty <= 0) return res.status(400).json({ message: "Quantity must be greater than zero." });
+
+    const product = await Product.findById(productId);
+    if (!product) return res.status(404).json({ message: "Product not found." });
+
+    // Find StoreInventory record
+    let inventoryQuery = { product: productId };
+    if (variantId) {
+      inventoryQuery.variantId = variantId;
+    } else {
+      inventoryQuery.variant = "default"; // or handle missing variant
+    }
+
+    // It's possible there are multiple matches if legacy, but let's grab the first
+    let storeRecord = await StoreInventory.findOne(inventoryQuery);
+    if (!storeRecord && !variantId && product.variants?.length > 0) {
+      // Fallback: if variantId not passed but product has variants, we can't do this reliably
+      return res.status(400).json({ message: "Please specify a variant for this product." });
+    }
+    
+    if (!storeRecord) {
+      // Create it if it doesn't exist
+      storeRecord = await StoreInventory.create({
+        product: productId,
+        variantId: variantId || null,
+        variant: variantId ? product.variants.find(v => v._id.toString() === variantId)?.color + " - " + product.variants.find(v => v._id.toString() === variantId)?.dimensions : "default",
+        locations: { downstairs: 0, upstairs: 0, store: 0, garage: 0 }
+      });
+    }
+
+    // Handle Actions
+    if (actionType === "add_stock") {
+      if (!toLocation) return res.status(400).json({ message: "Destination location required." });
+      storeRecord.locations[toLocation] += qty;
+      
+      // Update global stock
+      if (variantId) {
+        const v = product.variants.find(v => v._id.toString() === variantId);
+        if (v) v.stock = (v.stock || 0) + qty;
+      } else {
+        product.stock = (product.stock || 0) + qty;
+      }
+
+    } else if (actionType === "move") {
+      if (!fromLocation || !toLocation) return res.status(400).json({ message: "Source and destination required." });
+      if (storeRecord.locations[fromLocation] < qty) return res.status(400).json({ message: `Not enough stock in ${fromLocation}.` });
+      
+      storeRecord.locations[fromLocation] -= qty;
+      storeRecord.locations[toLocation] += qty;
+      // Global stock unchanged
+
+    } else if (actionType === "adjustment") {
+      if (!fromLocation) return res.status(400).json({ message: "Source location required." });
+      if (storeRecord.locations[fromLocation] < qty) return res.status(400).json({ message: `Not enough stock in ${fromLocation}.` });
+      
+      storeRecord.locations[fromLocation] -= qty;
+      
+      if (variantId) {
+        const v = product.variants.find(v => v._id.toString() === variantId);
+        if (v) v.stock = Math.max(0, (v.stock || 0) - qty);
+      } else {
+        product.stock = Math.max(0, (product.stock || 0) - qty);
+      }
+
+    } else if (actionType === "sale") {
+      if (!fromLocation) return res.status(400).json({ message: "Source location required." });
+      if (!channel) return res.status(400).json({ message: "Channel (Wolt/Shop) required." });
+      if (storeRecord.locations[fromLocation] < qty) return res.status(400).json({ message: `Not enough stock in ${fromLocation}.` });
+      
+      storeRecord.locations[fromLocation] -= qty;
+      
+      let itemPrice = parseFloat(price);
+      if (isNaN(itemPrice)) {
+        if (variantId) {
+          const v = product.variants.find(v => v._id.toString() === variantId);
+          itemPrice = v?.price || product.price;
+        } else {
+          itemPrice = product.price;
+        }
+      }
+
+      // Deduct global stock
+      if (variantId) {
+        const v = product.variants.find(v => v._id.toString() === variantId);
+        if (v) v.stock = Math.max(0, (v.stock || 0) - qty);
+      } else {
+        product.stock = Math.max(0, (product.stock || 0) - qty);
+      }
+
+      // Create Sales Record via Order
+      const businessDate = getMaltaBusinessDate();
+      
+      const vDetails = variantId ? product.variants.find(v => v._id.toString() === variantId) : null;
+
+      await Order.create({
+        user: null, // guest/pos
+        items: [{
+          name: product.name,
+          price: itemPrice,
+          qty: qty,
+          image: product.images?.[0] || "",
+          product: product._id,
+          color: vDetails?.color || "",
+          dimensions: vDetails?.dimensions || "",
+          fulfilledLocations: [{ location: fromLocation, quantity: qty }]
+        }],
+        total: itemPrice * qty,
+        finalTotal: itemPrice * qty,
+        discountAmount: 0,
+        paymentMethod: "CASH", // Or POS, assuming paid
+        isPaid: true,
+        paidAt: new Date(),
+        status: "Delivered", // Auto fulfilled
+        channel: channel, // wolt or shop
+        businessDate: businessDate
+      });
+    } else {
+      return res.status(400).json({ message: "Invalid action type." });
+    }
+
+    // Save logs and updates
+    await storeRecord.save();
+    await product.save();
+
+    await InventoryLog.create({
+      product: productId,
+      variantId,
+      actionType,
+      fromLocation,
+      toLocation,
+      quantity: qty,
+      channel,
+      price: parseFloat(price) || undefined,
+      businessDate: getMaltaBusinessDate()
+    });
+
+    res.json({ message: "Inventory action completed successfully.", record: storeRecord });
+  } catch (err) {
+    console.error("Inventory action error:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
