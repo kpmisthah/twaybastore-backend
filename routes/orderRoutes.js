@@ -7,6 +7,7 @@ import Order from "../models/Order.js";
 import Product from "../models/Product.js";
 import User from "../models/User.js";
 import Coupon from "../models/Coupon.js"; // ✅ coupon model
+import StoreInventory from "../models/StoreInventory.js";
 import {
   sendOrderMail,
   sendCancelMail,
@@ -16,6 +17,7 @@ import {
 import { orderRateLimiter, codRateLimiter } from "../middleware/rateLimiter.js";
 import auth from "../middleware/auth.js";
 import { requireAdmin } from "../middleware/adminAuth.js";
+import { getMaltaBusinessDate } from "../utils/businessDate.js";
 
 const router = express.Router();
 
@@ -69,6 +71,40 @@ const adjustStock = async (items, direction = "decrement") => {
       await product.save();
     } catch (err) {
       console.error(`Stock adjustment error for ${item.product}:`, err);
+    }
+  }
+};
+
+const restoreStoreInventory = async (items) => {
+  for (const item of items) {
+    if (!item.fulfilledLocations || item.fulfilledLocations.length === 0) continue;
+    
+    try {
+      let inventoryQuery = { product: item.product };
+      const productObj = await Product.findById(item.product);
+      if (productObj && productObj.variants?.length > 0) {
+         const variant = productObj.variants.find(v => v.color === item.color && v.dimensions === item.dimensions);
+         if (variant) {
+           inventoryQuery.variantId = variant._id.toString();
+         } else {
+           inventoryQuery.variant = "default";
+         }
+      } else {
+        inventoryQuery.variant = "default";
+      }
+
+      let storeRecord = await StoreInventory.findOne(inventoryQuery);
+      if (storeRecord) {
+        for (const fLoc of item.fulfilledLocations) {
+          if (fLoc.location && fLoc.quantity > 0) {
+            storeRecord.locations[fLoc.location] = (storeRecord.locations[fLoc.location] || 0) + fLoc.quantity;
+            console.log(`Restored ${fLoc.quantity} to ${fLoc.location} for product ${item.product}`);
+          }
+        }
+        await storeRecord.save();
+      }
+    } catch (err) {
+      console.error(`StoreInventory restore error for ${item.product}:`, err);
     }
   }
 };
@@ -433,6 +469,7 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       shipping: mergedShipping,
       contact: mergedContact,
       deliveryRegion: deliveryRegion || "Malta",
+      businessDate: getMaltaBusinessDate(),
     });
 
     await order.save();
@@ -564,6 +601,10 @@ router.put("/:orderId/status", requireAdmin, async (req, res) => {
 
     if (order.status !== "Cancelled" && status === "Cancelled") {
       await adjustStock(order.items, "increment");
+      if (order.isFulfilled) {
+        await restoreStoreInventory(order.items);
+        console.log(`StoreInventory restored for order ${order._id} (Admin Cancel)`);
+      }
       console.log(`Inventory restored for order ${order._id} (Admin Cancel)`);
     }
 
@@ -573,6 +614,96 @@ router.put("/:orderId/status", requireAdmin, async (req, res) => {
   } catch (err) {
     console.error("Update status error:", err);
     res.status(500).json({ message: "Failed to update status." });
+  }
+});
+
+/* -------------------------------------------------------
+   Admin: Fulfill Order (allocate locations)
+------------------------------------------------------- */
+router.post("/:orderId/fulfill", requireAdmin, async (req, res) => {
+  try {
+    const { fulfillmentData } = req.body; // Array of { itemId, locations: { downstairs: 2, garage: 1 } }
+    
+    // Atomically find and lock the order to prevent race conditions
+    const order = await Order.findOneAndUpdate(
+      { _id: req.params.orderId, isFulfilled: false },
+      { $set: { isFulfilled: true } },
+      { new: true }
+    );
+
+    if (!order) {
+      // If we couldn't find it, it either doesn't exist, or is already fulfilled.
+      const existingOrder = await Order.findById(req.params.orderId);
+      if (!existingOrder) return res.status(404).json({ message: "Order not found" });
+      return res.status(400).json({ message: "Order is already fulfilled or currently processing" });
+    }
+
+    if (order.status === "Cancelled") {
+      // Revert the lock
+      order.isFulfilled = false;
+      await order.save();
+      return res.status(400).json({ message: "Cannot fulfill a cancelled order" });
+    }
+
+    // Validate and process each item
+    for (const item of order.items) {
+      const fData = fulfillmentData.find(f => f.itemId === item._id.toString());
+      if (!fData) {
+        return res.status(400).json({ message: `Fulfillment data missing for item ${item.name}` });
+      }
+
+      const totalAllocated = Object.values(fData.locations).reduce((sum, qty) => sum + (parseInt(qty) || 0), 0);
+      if (totalAllocated !== item.qty) {
+        return res.status(400).json({ message: `Total allocated quantity for ${item.name} (${totalAllocated}) does not match order quantity (${item.qty})` });
+      }
+
+      // Deduct from StoreInventory
+      let inventoryQuery = { product: item.product };
+      // Attempt to find variant match if applicable
+      const productObj = await Product.findById(item.product);
+      if (productObj && productObj.variants?.length > 0) {
+         const variant = productObj.variants.find(v => v.color === item.color && v.dimensions === item.dimensions);
+         if (variant) {
+           inventoryQuery.variantId = variant._id.toString();
+         } else {
+           inventoryQuery.variant = "default";
+         }
+      } else {
+        inventoryQuery.variant = "default";
+      }
+
+      let storeRecord = await StoreInventory.findOne(inventoryQuery);
+      if (!storeRecord) {
+         // Create fallback
+         storeRecord = await StoreInventory.create({
+            product: item.product,
+            variantId: inventoryQuery.variantId || null,
+            variant: inventoryQuery.variantId ? "matched_variant" : "default",
+            locations: { downstairs: 0, upstairs: 0, store: 0, garage: 0 }
+         });
+      }
+
+      // Verify sufficient stock and deduct
+      for (const [loc, qty] of Object.entries(fData.locations)) {
+         const q = parseInt(qty) || 0;
+         if (q > 0) {
+            if (storeRecord.locations[loc] < q) {
+               return res.status(400).json({ message: `Insufficient stock in ${loc} for ${item.name}. Has ${storeRecord.locations[loc] || 0}, needs ${q}.` });
+            }
+            storeRecord.locations[loc] -= q;
+            item.fulfilledLocations.push({ location: loc, quantity: q });
+         }
+      }
+
+      await storeRecord.save();
+    }
+
+    await order.save();
+    
+    res.json({ message: "Order fulfilled successfully", order });
+  } catch (err) {
+    console.error("Fulfill error:", err);
+    res.status(500).json({ message: "Failed to fulfill order." });
   }
 });
 
@@ -664,6 +795,9 @@ router.post("/:orderId/cancel", async (req, res) => {
 
     // Restore stock
     await adjustStock(order.items, "increment");
+    if (order.isFulfilled) {
+      await restoreStoreInventory(order.items);
+    }
 
     if (order.user?.email) {
       try {
@@ -857,6 +991,7 @@ if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
       contact,
       deliveryRegion: deliveryRegion || "Malta",
       deliveryMethod: deliveryMethod || "Shipping",
+      businessDate: getMaltaBusinessDate(),
     });
 
     await order.save();
