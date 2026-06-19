@@ -227,15 +227,43 @@ router.patch("/:id/click", async (req, res) => {
 /* ---------------------------------------------
    5) ADD PRODUCT (WITH R2 IMAGES)
 ---------------------------------------------- */
+import StoreInventory from "../models/StoreInventory.js";
+
 router.post("/", async (req, res) => {
   try {
+    let baseStock = 0;
+    if (req.body.locations) {
+      baseStock = (req.body.locations.downstairs || 0) + (req.body.locations.upstairs || 0) + (req.body.locations.store || 0) + (req.body.locations.garage || 0);
+    }
+
     const product = await Product.create({
       ...req.body,
       realPrice: Number(req.body.realPrice),
       price: Number(req.body.price),
       discount: Number(req.body.discount || 0),
+      stock: req.body.variants?.length ? 0 : (req.body.stock || baseStock),
       images: req.body.images, // already URLs
     });
+
+    // Create store inventory records
+    if (req.body.variants && req.body.variants.length > 0) {
+      for (const v of product.variants) {
+        const reqVar = req.body.variants.find(rv => rv.color === v.color && rv.dimensions === v.dimensions);
+        await StoreInventory.create({
+          product: product._id,
+          variant: [v.color, v.dimensions].filter(Boolean).join(" - ") || v._id.toString(),
+          variantId: v._id.toString(),
+          locations: reqVar?.locations || { downstairs: 0, upstairs: 0, store: 0, garage: 0 }
+        });
+      }
+    } else {
+      await StoreInventory.create({
+        product: product._id,
+        variant: "default",
+        variantId: null,
+        locations: req.body.locations || { downstairs: 0, upstairs: 0, store: 0, garage: 0 }
+      });
+    }
 
     res.json({ success: true, product });
   } catch (err) {
@@ -432,8 +460,28 @@ router.get("/:id", async (req, res) => {
     const product = await Product.findOne({
       _id: req.params.id,
       isDeleted: { $ne: true },
-    });
+    }).lean();
     if (!product) return res.status(404).json({ message: "Product not found" });
+
+    // Fetch store inventory to include locations
+    const inventory = await StoreInventory.find({ product: product._id }).lean();
+    
+    if (inventory && inventory.length > 0) {
+      if (!product.variants || product.variants.length === 0) {
+        const defaultInv = inventory.find(i => i.variant === "default");
+        if (defaultInv) {
+          product.locations = defaultInv.locations;
+        }
+      } else {
+        product.variants = product.variants.map(v => {
+          const inv = inventory.find(i => i.variantId === v._id.toString());
+          return { ...v, locations: inv ? inv.locations : { downstairs: 0, upstairs: 0, store: 0, garage: 0 } };
+        });
+      }
+    } else {
+      product.locations = { downstairs: 0, upstairs: 0, store: 0, garage: 0 };
+    }
+
     res.status(200).json(product);
   } catch (err) {
     res.status(500).json({ message: "Error fetching product" });
@@ -445,12 +493,45 @@ router.get("/:id", async (req, res) => {
 ---------------------------------------------- */
 router.put("/:id", async (req, res) => {
   try {
+    let baseStock = 0;
+    if (req.body.locations) {
+      baseStock = (req.body.locations.downstairs || 0) + (req.body.locations.upstairs || 0) + (req.body.locations.store || 0) + (req.body.locations.garage || 0);
+      req.body.stock = req.body.variants?.length ? 0 : (req.body.stock || baseStock);
+    }
+
     const updated = await Product.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     });
     if (!updated) return res.status(404).json({ message: "Product not found" });
+
+    // Update store inventory records
+    if (req.body.variants && req.body.variants.length > 0) {
+      for (const v of updated.variants) {
+        const reqVar = req.body.variants.find(rv => rv.color === v.color && rv.dimensions === v.dimensions);
+        if (reqVar?.locations) {
+          await StoreInventory.findOneAndUpdate(
+            { product: updated._id, variantId: v._id.toString() },
+            { 
+              $set: { 
+                locations: reqVar.locations,
+                variant: [v.color, v.dimensions].filter(Boolean).join(" - ") || v._id.toString()
+              } 
+            },
+            { upsert: true, new: true }
+          );
+        }
+      }
+    } else if (req.body.locations) {
+      await StoreInventory.findOneAndUpdate(
+        { product: updated._id, variant: "default" },
+        { $set: { locations: req.body.locations } },
+        { upsert: true, new: true }
+      );
+    }
+
     res.status(200).json({ message: "Product updated", product: updated });
   } catch (err) {
+    console.error("Error updating product:", err);
     res.status(500).json({ message: "Error updating product" });
   }
 });
