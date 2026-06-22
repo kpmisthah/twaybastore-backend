@@ -286,13 +286,17 @@ router.post("/action", async (req, res) => {
       if (!toLocation) return res.status(400).json({ message: "Destination location required." });
       storeRecord.locations[toLocation] += qty;
       
-      // Update global stock
+      // TEMPORARILY DISABLED: Update global stock
+      // The user requested to disable global stock updates during the initial store location sync.
+      // Uncomment the below code once the initial sync is complete.
+      /*
       if (variantId) {
         const v = product.variants.find(v => v._id.toString() === variantId);
         if (v) v.stock = (v.stock || 0) + qty;
       } else {
         product.stock = (product.stock || 0) + qty;
       }
+      */
 
     } else if (actionType === "move") {
       if (!fromLocation || !toLocation) return res.status(400).json({ message: "Source and destination required." });
