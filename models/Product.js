@@ -11,6 +11,7 @@ const variantSchema = new mongoose.Schema({
   price: { type: Number, required: true },
   discount: { type: Number, default: 0 },
   images: [String],
+  woltId: { type: String }, // NEW FIELD
 });
 
 // ---------------- Product Schema ----------------
@@ -27,6 +28,7 @@ const productSchema = new mongoose.Schema(
 
     sku: { type: String },
     productCode: { type: String, unique: true, sparse: true },
+    woltId: { type: String }, // NEW FIELD
     category: { type: String, required: true },
     subCategory: { type: String },
     brand: { type: String },
