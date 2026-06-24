@@ -109,6 +109,58 @@ router.get("/export", async (req, res) => {
 });
 
 /* ---------------------------------------------
+   1.2) EXPORT PRODUCTS TO XLSX (WOLT)
+---------------------------------------------- */
+router.get("/export-wolt", async (req, res) => {
+  try {
+    const products = await Product.find({ isDeleted: { $ne: true } }).lean();
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Wolt Inventory");
+
+    worksheet.columns = [
+      { header: "id", key: "id", width: 30 },
+      { header: "name", key: "name", width: 50 },
+      { header: "total", key: "total", width: 15 },
+    ];
+
+    products.forEach((prod) => {
+      if (prod.variants && prod.variants.length > 0) {
+        prod.variants.forEach((variant) => {
+          const variantName = `${prod.name} ${variant.color || ""} ${variant.dimensions || ""}`.trim();
+          worksheet.addRow({
+            id: variant._id.toString(),
+            name: variantName,
+            total: variant.stock || 0,
+          });
+        });
+      } else {
+        worksheet.addRow({
+          id: prod._id.toString(),
+          name: prod.name,
+          total: prod.stock || 0,
+        });
+      }
+    });
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    );
+    res.setHeader(
+      "Content-Disposition",
+      "attachment; filename=wolt_inventory.xlsx"
+    );
+
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    console.error("Export Wolt failed:", err);
+    res.status(500).json({ message: "Export Wolt failed" });
+  }
+});
+
+/* ---------------------------------------------
    2) MOST SOLD (must be above :id)
 ---------------------------------------------- */
 router.get("/most-sold", async (req, res) => {
@@ -465,7 +517,7 @@ router.get("/:id", async (req, res) => {
 
     // Fetch store inventory to include locations
     const inventory = await StoreInventory.find({ product: product._id }).lean();
-    
+
     if (inventory && inventory.length > 0) {
       if (!product.variants || product.variants.length === 0) {
         const defaultInv = inventory.find(i => i.variant === "default");
@@ -511,11 +563,11 @@ router.put("/:id", async (req, res) => {
         if (reqVar?.locations) {
           await StoreInventory.findOneAndUpdate(
             { product: updated._id, variantId: v._id.toString() },
-            { 
-              $set: { 
+            {
+              $set: {
                 locations: reqVar.locations,
                 variant: [v.color, v.dimensions].filter(Boolean).join(" - ") || v._id.toString()
-              } 
+              }
             },
             { upsert: true, new: true }
           );
