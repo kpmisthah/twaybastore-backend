@@ -127,16 +127,18 @@ router.get("/export-wolt", async (req, res) => {
     products.forEach((prod) => {
       if (prod.variants && prod.variants.length > 0) {
         prod.variants.forEach((variant) => {
+          if (!variant.woltId) return; // Only export items mapped to Wolt
           const variantName = `${prod.name} ${variant.color || ""} ${variant.dimensions || ""}`.trim();
           worksheet.addRow({
-            id: variant._id.toString(),
+            id: variant.woltId,
             name: variantName,
             total: variant.stock || 0,
           });
         });
       } else {
+        if (!prod.woltId) return; // Only export items mapped to Wolt
         worksheet.addRow({
-          id: prod._id.toString(),
+          id: prod.woltId,
           name: prod.name,
           total: prod.stock || 0,
         });
