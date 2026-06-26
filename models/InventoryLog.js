@@ -19,12 +19,12 @@ const inventoryLogSchema = new mongoose.Schema(
     },
     fromLocation: {
       type: String,
-      enum: ["downstairs", "upstairs", "store", "garage", null], // null if adding stock
+      enum: ["downstairs", "upstairs", "store", "mosta_garage", "naxxar_garage", null], // null if adding stock
       default: null,
     },
     toLocation: {
       type: String,
-      enum: ["downstairs", "upstairs", "store", "garage", null], // null if sale/adjustment
+      enum: ["downstairs", "upstairs", "store", "mosta_garage", "naxxar_garage", null], // null if sale/adjustment
       default: null,
     },
     quantity: {
