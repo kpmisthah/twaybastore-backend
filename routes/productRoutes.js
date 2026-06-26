@@ -287,7 +287,7 @@ router.post("/", async (req, res) => {
   try {
     let baseStock = 0;
     if (req.body.locations) {
-      baseStock = (req.body.locations.downstairs || 0) + (req.body.locations.upstairs || 0) + (req.body.locations.store || 0) + (req.body.locations.garage || 0);
+      baseStock = (req.body.locations.downstairs || 0) + (req.body.locations.upstairs || 0) + (req.body.locations.store || 0) + (req.body.locations.mosta_garage || 0) + (req.body.locations.naxxar_garage || 0);
     }
 
     const product = await Product.create({
@@ -307,7 +307,7 @@ router.post("/", async (req, res) => {
           product: product._id,
           variant: [v.color, v.dimensions].filter(Boolean).join(" - ") || v._id.toString(),
           variantId: v._id.toString(),
-          locations: reqVar?.locations || { downstairs: 0, upstairs: 0, store: 0, garage: 0 }
+          locations: reqVar?.locations || { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0, naxxar_garage: 0 }
         });
       }
     } else {
@@ -315,7 +315,7 @@ router.post("/", async (req, res) => {
         product: product._id,
         variant: "default",
         variantId: null,
-        locations: req.body.locations || { downstairs: 0, upstairs: 0, store: 0, garage: 0 }
+        locations: req.body.locations || { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0, naxxar_garage: 0 }
       });
     }
 
@@ -529,11 +529,11 @@ router.get("/:id", async (req, res) => {
       } else {
         product.variants = product.variants.map(v => {
           const inv = inventory.find(i => i.variantId === v._id.toString());
-          return { ...v, locations: inv ? inv.locations : { downstairs: 0, upstairs: 0, store: 0, garage: 0 } };
+          return { ...v, locations: inv ? inv.locations : { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0, naxxar_garage: 0 } };
         });
       }
     } else {
-      product.locations = { downstairs: 0, upstairs: 0, store: 0, garage: 0 };
+      product.locations = { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0, naxxar_garage: 0 };
     }
 
     res.status(200).json(product);
@@ -549,7 +549,7 @@ router.put("/:id", async (req, res) => {
   try {
     let baseStock = 0;
     if (req.body.locations) {
-      baseStock = (req.body.locations.downstairs || 0) + (req.body.locations.upstairs || 0) + (req.body.locations.store || 0) + (req.body.locations.garage || 0);
+      baseStock = (req.body.locations.downstairs || 0) + (req.body.locations.upstairs || 0) + (req.body.locations.store || 0) + (req.body.locations.mosta_garage || 0) + (req.body.locations.naxxar_garage || 0);
       req.body.stock = req.body.variants?.length ? 0 : (req.body.stock || baseStock);
     }
 
