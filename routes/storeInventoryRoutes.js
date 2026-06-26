@@ -91,19 +91,21 @@ router.get("/export", async (req, res) => {
         { header: "Downstairs Qty", key: "downstairs", width: 15 },
         { header: "Upstairs Qty", key: "upstairs", width: 15 },
         { header: "Store Qty", key: "store", width: 15 },
-        { header: "Garage Qty", key: "garage", width: 15 },
+        { header: "Mosta Garage Qty", key: "mosta_garage", width: 15 },
+        { header: "Naxxar Garage Qty", key: "naxxar_garage", width: 15 },
         { header: "Total Qty", key: "total", width: 15 }
       ];
 
       filtered.forEach(r => {
-        const total = ["downstairs", "upstairs", "store", "garage"].reduce((s, l) => s + (r.locations?.[l] || 0), 0);
+        const total = ["downstairs", "upstairs", "store", "mosta_garage", "naxxar_garage"].reduce((s, l) => s + (r.locations?.[l] || 0), 0);
         worksheet.addRow({
           name: r.product?.name || "Unknown",
           variant: r.variant === "default" ? "Standard" : r.variant,
           downstairs: r.locations?.downstairs || 0,
           upstairs: r.locations?.upstairs || 0,
           store: r.locations?.store || 0,
-          garage: r.locations?.garage || 0,
+          mosta_garage: r.locations?.mosta_garage || 0,
+          naxxar_garage: r.locations?.naxxar_garage || 0,
           total: total
         });
       });
@@ -168,7 +170,8 @@ router.get("/master-sheet", async (req, res) => {
         (r.locations.downstairs || 0) +
         (r.locations.upstairs || 0) +
         (r.locations.store || 0) +
-        (r.locations.garage || 0),
+        (r.locations.mosta_garage || 0) +
+        (r.locations.naxxar_garage || 0)
     }));
 
     const pageNum = parseInt(page) || 1;
@@ -216,7 +219,8 @@ router.put("/:id", async (req, res) => {
           "locations.downstairs": locations.downstairs ?? 0,
           "locations.upstairs": locations.upstairs ?? 0,
           "locations.store": locations.store ?? 0,
-          "locations.garage": locations.garage ?? 0,
+          "locations.mosta_garage": locations.mosta_garage ?? 0,
+          "locations.naxxar_garage": locations.naxxar_garage ?? 0,
         },
       },
       { new: true, runValidators: true }
@@ -231,7 +235,7 @@ router.put("/:id", async (req, res) => {
       (record.locations.downstairs || 0) +
       (record.locations.upstairs || 0) +
       (record.locations.store || 0) +
-      (record.locations.garage || 0);
+      (record.locations.mosta_garage || 0) + (record.locations.naxxar_garage || 0);
 
     const product = await Product.findById(record.product._id);
     if (product) {
@@ -295,7 +299,7 @@ router.post("/action", async (req, res) => {
         product: productId,
         variantId: variantId || null,
         variant: variantId ? product.variants.find(v => v._id.toString() === variantId)?.color + " - " + product.variants.find(v => v._id.toString() === variantId)?.dimensions : "default",
-        locations: { downstairs: 0, upstairs: 0, store: 0, garage: 0 }
+        locations: { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0 , naxxar_garage: 0  }
       });
     }
 
@@ -445,7 +449,7 @@ router.post("/bulk-init", async (req, res) => {
               product: prod._id,
               variant: variantLabel,
               variantId: v._id.toString(),
-              locations: { downstairs: 0, upstairs: 0, store: 0, garage: 0 },
+              locations: { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0 , naxxar_garage: 0  },
             });
             created++;
           } else {
@@ -468,7 +472,7 @@ router.post("/bulk-init", async (req, res) => {
             product: prod._id,
             variant: "default",
             variantId: null,
-            locations: { downstairs: 0, upstairs: 0, store: 0, garage: 0 },
+            locations: { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0 , naxxar_garage: 0  },
           });
           created++;
         } else {
