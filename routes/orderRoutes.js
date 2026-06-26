@@ -622,7 +622,7 @@ router.put("/:orderId/status", requireAdmin, async (req, res) => {
 ------------------------------------------------------- */
 router.post("/:orderId/fulfill", requireAdmin, async (req, res) => {
   try {
-    const { fulfillmentData } = req.body; // Array of { itemId, locations: { downstairs: 2, garage: 1 } }
+    const { fulfillmentData } = req.body; // Array of { itemId, locations: { downstairs: 2, mosta_garage: 1 } }
     
     // Atomically find and lock the order to prevent race conditions
     const order = await Order.findOneAndUpdate(
@@ -679,7 +679,7 @@ router.post("/:orderId/fulfill", requireAdmin, async (req, res) => {
             product: item.product,
             variantId: inventoryQuery.variantId || null,
             variant: inventoryQuery.variantId ? "matched_variant" : "default",
-            locations: { downstairs: 0, upstairs: 0, store: 0, garage: 0 }
+            locations: { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0, naxxar_garage: 0 }
          });
       }
 
