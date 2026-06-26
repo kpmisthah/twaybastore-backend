@@ -22,7 +22,8 @@ const storeInventorySchema = new mongoose.Schema(
       downstairs: { type: Number, default: 0, min: 0 },
       upstairs: { type: Number, default: 0, min: 0 },
       store: { type: Number, default: 0, min: 0 },
-      garage: { type: Number, default: 0, min: 0 },
+      mosta_garage: { type: Number, default: 0, min: 0 },
+      naxxar_garage: { type: Number, default: 0, min: 0 },
     },
   },
   { timestamps: true }
