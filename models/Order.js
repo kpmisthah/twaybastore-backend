@@ -41,7 +41,7 @@ const orderSchema = new mongoose.Schema(
         dimensions: String,
         fulfilledLocations: [
           {
-            location: { type: String, enum: ["downstairs", "upstairs", "store", "garage"] },
+            location: { type: String, enum: ["downstairs", "upstairs", "store", "mosta_garage", "naxxar_garage"] },
             quantity: { type: Number, default: 0 }
           }
         ],
