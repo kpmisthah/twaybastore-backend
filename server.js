@@ -25,6 +25,7 @@ import ipBanRoutes from "./routes/ipBanRoutes.js";
 import uploadRoutes from "./routes/uploadRoutes.js";
 import bannerRoutes from "./routes/bannerRoutes.js";
 import storeInventoryRoutes from "./routes/storeInventoryRoutes.js";
+import preOrderRoutes from "./routes/preOrderRoutes.js";
 
 // ✅ Validate environment variables before starting server
 validateEnvironment();
@@ -83,6 +84,7 @@ app.use("/api/wishlist", wishlistRoutes);
 app.use("/api/contact", contactRoutes);
 app.use("/api/banners", bannerRoutes);
 app.use("/api/admin/store-inventory", storeInventoryRoutes);
+app.use("/api/admin/pre-orders", preOrderRoutes);
 // ...
 
 app.use("/api/ipban", ipBanRoutes);
