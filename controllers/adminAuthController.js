@@ -35,25 +35,30 @@ export async function adminRegister(req, res) {
 
 // ------------------ LOGIN ------------------
 export async function adminLogin(req, res) {
-  const { email, password } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ message: "Email and password required" });
+  try {
+    const { email, password } = req.body;
+    if (!email || !password)
+      return res.status(400).json({ message: "Email and password required" });
 
-  const admin = await Admin.findOne({ email }).select("+password");
-  if (!admin) return res.status(401).json({ message: "Invalid credentials" });
+    const admin = await Admin.findOne({ email }).select("+password");
+    if (!admin) return res.status(401).json({ message: "Invalid credentials" });
 
-  const ok = await admin.comparePassword(password);
-  if (!ok) return res.status(401).json({ message: "Invalid credentials" });
+    const ok = await admin.comparePassword(password);
+    if (!ok) return res.status(401).json({ message: "Invalid credentials" });
 
-  const payload = { id: admin._id.toString(), email: admin.email, role: "admin" };
-  const token = signAccessToken(payload);
+    const payload = { id: admin._id.toString(), email: admin.email, role: "admin" };
+    const token = signAccessToken(payload);
 
-  const safeAdmin = {
-    id: admin._id,
-    username: admin.username,
-    email: admin.email,
-    role: "admin",
-  };
+    const safeAdmin = {
+      id: admin._id,
+      username: admin.username,
+      email: admin.email,
+      role: "admin",
+    };
 
-  return res.json({ token, admin: safeAdmin });
+    return res.json({ token, admin: safeAdmin });
+  } catch (err) {
+    console.error("Admin login error:", err);
+    return res.status(500).json({ message: "Server error during login" });
+  }
 }
