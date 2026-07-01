@@ -563,8 +563,7 @@ router.get("/", async (_req, res) => {
 ------------------------------------------------------- */
 router.get("/admin/orders", requireAdmin, async (_req, res) => {
   try {
-    // Only return website orders (hide POS/Wolt sales from the main listing)
-    const orders = await Order.find({ channel: { $nin: ["shop", "wolt"] } }).populate("user");
+    const orders = await Order.find().populate("user");
     res.json(orders);
   } catch (err) {
     console.error("Admin fetch orders error:", err);
