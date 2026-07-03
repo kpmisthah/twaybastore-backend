@@ -26,6 +26,7 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import bannerRoutes from "./routes/bannerRoutes.js";
 import storeInventoryRoutes from "./routes/storeInventoryRoutes.js";
 import preOrderRoutes from "./routes/preOrderRoutes.js";
+import { initCronJobs } from "./utils/cronJobs.js";
 
 // ✅ Validate environment variables before starting server
 validateEnvironment();
@@ -175,7 +176,11 @@ io.on("connection", (socket) => {
 // --------- START SERVER ----------
 server.listen(
   PORT,
-  () => console.log(`Server running on port ${PORT}`),
+  () => {
+    console.log(`Server running on port ${PORT}`);
+    // Initialize scheduled cron jobs (like Daily Sales Report)
+    initCronJobs();
+  },
   console.log("R2 ENV CHECK:", {
     account: process.env.R2_ACCOUNT_ID,
     accessKey: process.env.R2_ACCESS_KEY?.slice(0, 6),
