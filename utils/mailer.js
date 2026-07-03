@@ -738,6 +738,113 @@ export const sendProductViewMail = async ({ to, userName, product }) => {
   await transporter.sendMail(mailOptions);
 };
 
+/* ------------------------ Daily Sales Report Email ------------------------ */
+export const sendDailySalesReportEmail = async ({ to, businessDate, summary, orders }) => {
+  const recipient = to || process.env.ADMIN_OTP_EMAIL || process.env.SMTP_USER;
+  
+  // Create lists for each channel
+  const renderOrders = (channelOrders) => {
+    if (!channelOrders || channelOrders.length === 0) return '<tr><td colspan="4" style="padding:8px; text-align:center; color:#888;">No sales</td></tr>';
+    return channelOrders.map((o, i) => `
+      <tr>
+        <td style="padding:8px;border:1px solid #eee;font-size:13px;">${new Date(o.createdAt).toLocaleTimeString('en-US', {timeZone: 'Europe/Malta', hour12: true, hour: '2-digit', minute:'2-digit'})}</td>
+        <td style="padding:8px;border:1px solid #eee;font-size:13px;">
+          ${o.items.map(item => `${item.qty}x ${item.name}`).join("<br/>")}
+        </td>
+        <td style="padding:8px;border:1px solid #eee;font-size:13px;text-align:right;">${formatCurrency(o.finalTotal || o.total)}</td>
+      </tr>
+    `).join("");
+  };
+
+  const html = `
+    <div style="font-family:Inter,Segoe UI,Arial,sans-serif;max-width:720px;margin:0 auto;background:#fff;padding:20px;border-radius:10px;box-shadow:0 4px 15px rgba(0,0,0,0.05);">
+      <div style="text-align:center; margin-bottom: 20px;">
+        <img src="https://res.cloudinary.com/dwgn4j1nu/image/upload/v1753372667/lqvyv4psgthcxzowovyp.png" alt="Twayba" style="height:42px"/>
+      </div>
+      <h2 style="margin:0 0 12px; color:#0c41a7; text-align:center;">Daily Sales Report</h2>
+      <p style="margin:0 0 20px; text-align:center; color:#555;">Business Date: <strong>${businessDate}</strong></p>
+      
+      <div style="background:#f6faff; border-radius:8px; padding:15px; margin-bottom:20px;">
+        <h3 style="margin:0 0 10px; color:#056cf2;">Summary</h3>
+        <table width="100%" cellpadding="5" cellspacing="0" style="font-size:15px;">
+          <tr>
+            <td><strong>Website Sales:</strong></td>
+            <td align="right" style="color:#056cf2; font-weight:bold;">${formatCurrency(summary.website)}</td>
+          </tr>
+          <tr>
+            <td><strong>Shop POS:</strong></td>
+            <td align="right" style="color:#f59e0b; font-weight:bold;">${formatCurrency(summary.shop)}</td>
+          </tr>
+          <tr>
+            <td><strong>Wolt Delivery:</strong></td>
+            <td align="right" style="color:#0ea5e9; font-weight:bold;">${formatCurrency(summary.wolt)}</td>
+          </tr>
+          <tr>
+            <td colspan="2"><hr style="border:none; border-top:1px solid #ddd;"/></td>
+          </tr>
+          <tr>
+            <td><strong style="font-size:18px;">Total Revenue:</strong></td>
+            <td align="right"><strong style="font-size:18px; color:#10b981;">${formatCurrency(summary.total)}</strong></td>
+          </tr>
+        </table>
+      </div>
+
+      <h3 style="margin:20px 0 10px; color:#0c41a7;">Shop Sales</h3>
+      <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #eee;width:100%;margin-bottom:20px;">
+        <thead style="background:#f0f4fc;">
+          <tr>
+            <th style="padding:8px;border:1px solid #eee;text-align:left;font-size:13px;">Time</th>
+            <th style="padding:8px;border:1px solid #eee;text-align:left;font-size:13px;">Items</th>
+            <th style="padding:8px;border:1px solid #eee;text-align:right;font-size:13px;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderOrders(orders.filter(o => o.channel === 'shop'))}
+        </tbody>
+      </table>
+
+      <h3 style="margin:20px 0 10px; color:#0c41a7;">Wolt Sales</h3>
+      <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #eee;width:100%;margin-bottom:20px;">
+        <thead style="background:#f0f4fc;">
+          <tr>
+            <th style="padding:8px;border:1px solid #eee;text-align:left;font-size:13px;">Time</th>
+            <th style="padding:8px;border:1px solid #eee;text-align:left;font-size:13px;">Items</th>
+            <th style="padding:8px;border:1px solid #eee;text-align:right;font-size:13px;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderOrders(orders.filter(o => o.channel === 'wolt'))}
+        </tbody>
+      </table>
+
+      <h3 style="margin:20px 0 10px; color:#0c41a7;">Website Sales</h3>
+      <table cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #eee;width:100%;margin-bottom:20px;">
+        <thead style="background:#f0f4fc;">
+          <tr>
+            <th style="padding:8px;border:1px solid #eee;text-align:left;font-size:13px;">Time</th>
+            <th style="padding:8px;border:1px solid #eee;text-align:left;font-size:13px;">Items</th>
+            <th style="padding:8px;border:1px solid #eee;text-align:right;font-size:13px;">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${renderOrders(orders.filter(o => o.channel === 'website'))}
+        </tbody>
+      </table>
+      
+      <p style="text-align:center; color:#999; font-size:12px; margin-top:30px;">
+        Auto-generated by Twayba System at 7:14 PM Malta time.
+      </p>
+    </div>
+  `;
+
+  await transporter.sendMail({
+    from: `"Twayba Admin" <${process.env.SMTP_USER}>`,
+    to: recipient,
+    subject: `📊 Daily Sales Report - ${businessDate}`,
+    html,
+  });
+};
+
 /* ------------------------ Internal New Order Alert (Team/Gmail) ------------------------ */
 /**
  * Sends an internal alert to your team inbox when a new order is placed.
