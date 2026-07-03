@@ -30,6 +30,7 @@
     "jest": "^30.0.4",
     "mongoose": "^8.16.4",
     "multer": "^2.0.2",
+    "node-cron": "^4.5.0",
     "node-fetch": "^3.3.2",
     "nodemailer": "^7.0.5",
     "openai": "^6.9.1",
