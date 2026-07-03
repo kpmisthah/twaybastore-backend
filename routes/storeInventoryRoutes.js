@@ -8,7 +8,6 @@ import Order from "../models/Order.js";
 import { getMaltaBusinessDate } from "../utils/businessDate.js";
 import nodemailer from "nodemailer";
 
-const otpStore = new Map(); // email -> { otp, expires }
 
 const router = express.Router();
 
@@ -260,51 +259,6 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-// ─── POST /api/admin/store-inventory/send-otp ───
-router.post("/send-otp", async (req, res) => {
-  try {
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const adminEmail = process.env.ADMIN_OTP_EMAIL || "twaybadailysales@gmail.com";
-    
-    otpStore.set(adminEmail, {
-      otp,
-      expires: Date.now() + 5 * 60 * 1000 // 5 minutes
-    });
-
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: adminEmail,
-        pass: process.env.ADMIN_OTP_APP_PASSWORD
-      }
-    });
-
-    await transporter.sendMail({
-      from: `"Twayba Admin" <${adminEmail}>`,
-      to: adminEmail,
-      subject: "OTP for Record Sale Action",
-      text: `Your OTP for recording a sale is: ${otp}\n\nIt is valid for 5 minutes.`,
-      html: `
-        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 20px;">
-          <div style="text-align:center; margin-bottom: 12px;">
-            <img src="https://res.cloudinary.com/dwgn4j1nu/image/upload/v1753372667/lqvyv4psgthcxzowovyp.png" alt="Twayba" style="height:42px"/>
-          </div>
-          <h2 style="margin: 8px 0 0; color:#0c41a7;">Record Sale OTP</h2>
-          <p style="color:#333">Use the code below to confirm your record sale action:</p>
-          <div style="font-size:28px; font-weight:800; letter-spacing: 3px; text-align:center; padding: 12px 0; color:#0c41a7;">
-            ${otp}
-          </div>
-          <p style="color:#666; font-size:14px;">This code will expire in <b>5 minutes</b>. If you didn’t request this, you can safely ignore this email.</p>
-        </div>
-      `
-    });
-
-    res.json({ message: "OTP sent successfully" });
-  } catch (err) {
-    console.error("OTP send error:", err);
-    res.status(500).json({ message: "Failed to send OTP", error: err.message });
-  }
-});
 
 // ─── POST /api/admin/store-inventory/action ───
 // Handle strict inventory movements (Add, Move, Sell, Adjust)
@@ -392,20 +346,7 @@ router.post("/action", async (req, res) => {
       if (!channel) return res.status(400).json({ message: "Channel (Wolt/Shop) required." });
       if (storeRecord.locations[fromLocation] < qty) return res.status(400).json({ message: `Not enough stock in ${fromLocation}.` });
       
-      const adminEmail = process.env.ADMIN_OTP_EMAIL || "twaybadailysales@gmail.com";
-      const storedOtpData = otpStore.get(adminEmail);
-      if (!storedOtpData) {
-        return res.status(400).json({ message: "OTP not requested or expired." });
-      }
-      if (Date.now() > storedOtpData.expires) {
-        otpStore.delete(adminEmail);
-        return res.status(400).json({ message: "OTP has expired." });
-      }
-      if (storedOtpData.otp !== otp) {
-        return res.status(400).json({ message: "Invalid OTP." });
-      }
-      // OTP is valid, clear it
-      otpStore.delete(adminEmail);
+
 
       storeRecord.locations[fromLocation] -= qty;
       
