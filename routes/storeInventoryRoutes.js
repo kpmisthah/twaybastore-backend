@@ -16,7 +16,7 @@ router.get("/", async (req, res) => {
     const { q, page = 1, limit = 10, tab, hideEmpty } = req.query;
 
     const records = await StoreInventory.find()
-      .populate("product", "name images variants category productCode")
+      .populate("product", "name images price variants category productCode")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -62,7 +62,7 @@ router.get("/export", async (req, res) => {
     const { q, tab, hideEmpty } = req.query;
     
     const records = await StoreInventory.find()
-      .populate("product", "name images variants category productCode")
+      .populate("product", "name images price variants category productCode")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -144,7 +144,7 @@ router.get("/master-sheet", async (req, res) => {
     const { q, page = 1, limit = 10 } = req.query;
 
     const records = await StoreInventory.find()
-      .populate("product", "name images variants category productCode")
+      .populate("product", "name images price variants category productCode")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -224,7 +224,7 @@ router.put("/:id", async (req, res) => {
         },
       },
       { new: true, runValidators: true }
-    ).populate("product", "name images variants category productCode");
+    ).populate("product", "name images price variants category productCode");
 
     if (!record) {
       return res.status(404).json({ message: "Inventory record not found" });
@@ -344,15 +344,21 @@ router.post("/action", async (req, res) => {
       
       storeRecord.locations[fromLocation] -= qty;
       
-      let itemPrice = parseFloat(price);
-      if (isNaN(itemPrice)) {
-        if (variantId) {
-          const v = product.variants.find(v => v._id.toString() === variantId);
-          itemPrice = v?.price || product.price;
-        } else {
-          itemPrice = product.price;
-        }
+      // Shop "list" price for this product / variant (used to derive discount)
+      let listPrice;
+      if (variantId) {
+        const v = product.variants.find(v => v._id.toString() === variantId);
+        listPrice = v?.price ?? product.price;
+      } else {
+        listPrice = product.price;
       }
+
+      // Actual price charged this sale (Wolt may be higher, shop may discount)
+      let itemPrice = parseFloat(price);
+      if (isNaN(itemPrice)) itemPrice = listPrice;
+
+      // If charged below list price, the difference is a discount (markup is not)
+      const discountAmount = Math.max(0, (listPrice - itemPrice) * qty);
 
       // Deduct global stock
       if (variantId) {
@@ -381,7 +387,7 @@ router.post("/action", async (req, res) => {
         }],
         total: itemPrice * qty,
         finalTotal: itemPrice * qty,
-        discountAmount: 0,
+        discountAmount: discountAmount,
         paymentMethod: "CASH", // Or POS, assuming paid
         isPaid: true,
         paidAt: new Date(),
