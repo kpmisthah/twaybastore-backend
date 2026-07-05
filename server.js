@@ -26,7 +26,7 @@ import uploadRoutes from "./routes/uploadRoutes.js";
 import bannerRoutes from "./routes/bannerRoutes.js";
 import storeInventoryRoutes from "./routes/storeInventoryRoutes.js";
 import preOrderRoutes from "./routes/preOrderRoutes.js";
-import { initCronJobs } from "./utils/cronJobs.js";
+import { initCronJobs, runDailySalesReport } from "./utils/cronJobs.js";
 
 // ✅ Validate environment variables before starting server
 validateEnvironment();
@@ -93,6 +93,17 @@ app.use("/api/admin/auth", adminAuthRoutes);
 // Example protected admin API
 app.get("/api/admin/stats", requireAdmin, (req, res) => {
   res.json({ ok: true, message: `Hello Admin ${req.admin.email}` });
+});
+
+// Endpoint for external Cron Services (like cron-job.org)
+app.get("/api/cron/daily-report", async (req, res) => {
+  // Simple protection: append ?key=TWAYBA_CRON_123 to your URL
+  if (req.query.key !== "TWAYBA_CRON_123") {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+  
+  await runDailySalesReport();
+  res.json({ message: "Daily report triggered successfully!" });
 });
 // app.use("/api/analytics", analyticsRoutes); // Duplicate removed
 
@@ -174,16 +185,17 @@ io.on("connection", (socket) => {
 });
 
 // --------- START SERVER ----------
+console.log("R2 ENV CHECK:", {
+  account: process.env.R2_ACCOUNT_ID,
+  accessKey: process.env.R2_ACCESS_KEY?.slice(0, 6),
+  secretKey: process.env.R2_SECRET_KEY ? "PRESENT" : "MISSING",
+});
+
 server.listen(
   PORT,
   () => {
     console.log(`Server running on port ${PORT}`);
     // Initialize scheduled cron jobs (like Daily Sales Report)
     initCronJobs();
-  },
-  console.log("R2 ENV CHECK:", {
-    account: process.env.R2_ACCOUNT_ID,
-    accessKey: process.env.R2_ACCESS_KEY?.slice(0, 6),
-    secretKey: process.env.R2_SECRET_KEY ? "PRESENT" : "MISSING",
-  })
+  }
 );
