@@ -34,7 +34,10 @@ export const generateInvoiceBuffer = async (order, userName) => {
 
   const total = Number(order.finalTotal || order.total || 0);
   const discount = Number(order.discountAmount || 0);
-  const subtotal = total + discount;
+  const itemsSubtotal = order.items.reduce((sum, item) => sum + (Number(item.price) * Number(item.qty)), 0);
+  let deliveryCharge = total + discount - itemsSubtotal;
+  deliveryCharge = Number(deliveryCharge.toFixed(2));
+  if (deliveryCharge < 0) deliveryCharge = 0;
 
   /* ---------------- HEADER ---------------- */
   doc.rect(0, 0, doc.page.width, 80).fill(BRAND_BLUE);
@@ -109,8 +112,7 @@ export const generateInvoiceBuffer = async (order, userName) => {
     const lineTotal = qty * price;
     const variant =
       item.color || item.dimensions
-        ? `${item.color || ""} ${
-            item.dimensions !== "N/A" ? item.dimensions : ""
+        ? `${item.color || ""} ${item.dimensions !== "N/A" ? item.dimensions : ""
           }`.trim()
         : "";
 
@@ -134,10 +136,13 @@ export const generateInvoiceBuffer = async (order, userName) => {
   const totalsX = col4;
 
   doc.fontSize(11).font("Helvetica");
-  doc.text(`Subtotal: ${formatCurrency(subtotal)}`, totalsX, doc.y, {
+  doc.text(`Subtotal: ${formatCurrency(itemsSubtotal)}`, totalsX, doc.y, {
     align: "right",
   });
-  doc.text("Delivery: Free (24h Malta)", totalsX, doc.y + 14, {
+  
+  const deliveryText = deliveryCharge > 0 ? formatCurrency(deliveryCharge) : "Free";
+  const regionText = order.deliveryRegion ? order.deliveryRegion : "Malta";
+  doc.text(`Delivery (${regionText}): ${deliveryText}`, totalsX, doc.y + 14, {
     align: "right",
   });
 

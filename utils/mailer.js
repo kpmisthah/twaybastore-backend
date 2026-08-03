@@ -153,6 +153,12 @@ export const sendOrderMail = async (to, userName, order) => {
   // 🔥 Generate invoice PDF buffer
   const invoiceBuffer = await generateInvoiceBuffer(order, userName);
 
+  const itemsSubtotal = order.items.reduce((sum, item) => sum + (Number(item.price) * Number(item.qty)), 0);
+  const totalAmount = Number(order.finalTotal || order.total || 0);
+  const discountAmount = Number(order.discountAmount || 0);
+  const computedDeliveryCharge = Math.max(0, totalAmount + discountAmount - itemsSubtotal);
+  const deliveryText = computedDeliveryCharge > 0 ? `€${computedDeliveryCharge.toFixed(2)}` : "Free";
+
   const mailOptions = {
     from: `"Twayba" <${process.env.SMTP_USER}>`,
     to,
@@ -209,6 +215,10 @@ export const sendOrderMail = async (to, userName, order) => {
                           <td align="right" style="font-weight: bold; color:#056cf2; font-size: 17px;">
                             €${Number(order.total).toFixed(2)}
                           </td>
+                        </tr>
+                        <tr>
+                          <td><b>Delivery Charge:</b></td>
+                          <td align="right"><span style="color:#111; font-weight: 600;">${deliveryText}</span></td>
                         </tr>
                         <tr>
                           <td><b>Estimated Delivery:</b></td>
@@ -695,7 +705,7 @@ export const sendProductViewMail = async ({ to, userName, product }) => {
   const img = images?.[0] || "https://www.twayba.com/default-product.png";
   const productUrl = `${process.env.APP_BASE_URL || "https://www.twayba.com"}/product/${_id}`;
   const formattedPrice = formatCurrency(price);
-  const urgencyMsg = discount > 0 
+  const urgencyMsg = discount > 0
     ? `🔥 Limited stock — ${discount}% off right now!`
     : "⏰ This product is trending — get it before it’s gone!";
 
@@ -741,13 +751,13 @@ export const sendProductViewMail = async ({ to, userName, product }) => {
 /* ------------------------ Daily Sales Report Email ------------------------ */
 export const sendDailySalesReportEmail = async ({ to, businessDate, summary, orders }) => {
   const recipient = to || process.env.ADMIN_OTP_EMAIL || process.env.SMTP_USER;
-  
+
   // Create lists for each channel
   const renderOrders = (channelOrders) => {
     if (!channelOrders || channelOrders.length === 0) return '<tr><td colspan="4" style="padding:8px; text-align:center; color:#888;">No sales</td></tr>';
     return channelOrders.map((o, i) => `
       <tr>
-        <td style="padding:8px;border:1px solid #eee;font-size:13px;">${new Date(o.createdAt).toLocaleTimeString('en-US', {timeZone: 'Europe/Malta', hour12: true, hour: '2-digit', minute:'2-digit'})}</td>
+        <td style="padding:8px;border:1px solid #eee;font-size:13px;">${new Date(o.createdAt).toLocaleTimeString('en-US', { timeZone: 'Europe/Malta', hour12: true, hour: '2-digit', minute: '2-digit' })}</td>
         <td style="padding:8px;border:1px solid #eee;font-size:13px;">
           ${o.items.map(item => `${item.qty}x ${item.name}`).join("<br/>")}
         </td>
@@ -878,7 +888,7 @@ export const sendNewOrderAlert = async ({ to, order, customerName }) => {
     .join("");
 
   const shipping = order?.shipping || {};
-  const contact  = order?.contact  || {};
+  const contact = order?.contact || {};
 
   const html = `
     <div style="font-family:Inter,Segoe UI,Arial,sans-serif;max-width:720px;margin:0 auto;">
