@@ -78,17 +78,17 @@ const adjustStock = async (items, direction = "decrement") => {
 const restoreStoreInventory = async (items) => {
   for (const item of items) {
     if (!item.fulfilledLocations || item.fulfilledLocations.length === 0) continue;
-    
+
     try {
       let inventoryQuery = { product: item.product };
       const productObj = await Product.findById(item.product);
       if (productObj && productObj.variants?.length > 0) {
-         const variant = productObj.variants.find(v => v.color === item.color && v.dimensions === item.dimensions);
-         if (variant) {
-           inventoryQuery.variantId = variant._id.toString();
-         } else {
-           inventoryQuery.variant = "default";
-         }
+        const variant = productObj.variants.find(v => v.color === item.color && v.dimensions === item.dimensions);
+        if (variant) {
+          inventoryQuery.variantId = variant._id.toString();
+        } else {
+          inventoryQuery.variant = "default";
+        }
       } else {
         inventoryQuery.variant = "default";
       }
@@ -469,6 +469,7 @@ router.post("/", orderRateLimiter, auth, async (req, res) => {
       shipping: mergedShipping,
       contact: mergedContact,
       deliveryRegion: deliveryRegion || "Malta",
+      deliveryMethod: deliveryMethod || "Shipping",
       businessDate: getMaltaBusinessDate(),
     });
 
@@ -623,7 +624,7 @@ router.put("/:orderId/status", requireAdmin, async (req, res) => {
 router.post("/:orderId/fulfill", requireAdmin, async (req, res) => {
   try {
     const { fulfillmentData } = req.body; // Array of { itemId, locations: { downstairs: 2, mosta_garage: 1 } }
-    
+
     // Atomically find and lock the order to prevent race conditions
     const order = await Order.findOneAndUpdate(
       { _id: req.params.orderId, isFulfilled: false },
@@ -662,44 +663,44 @@ router.post("/:orderId/fulfill", requireAdmin, async (req, res) => {
       // Attempt to find variant match if applicable
       const productObj = await Product.findById(item.product);
       if (productObj && productObj.variants?.length > 0) {
-         const variant = productObj.variants.find(v => v.color === item.color && v.dimensions === item.dimensions);
-         if (variant) {
-           inventoryQuery.variantId = variant._id.toString();
-         } else {
-           inventoryQuery.variant = "default";
-         }
+        const variant = productObj.variants.find(v => v.color === item.color && v.dimensions === item.dimensions);
+        if (variant) {
+          inventoryQuery.variantId = variant._id.toString();
+        } else {
+          inventoryQuery.variant = "default";
+        }
       } else {
         inventoryQuery.variant = "default";
       }
 
       let storeRecord = await StoreInventory.findOne(inventoryQuery);
       if (!storeRecord) {
-         // Create fallback
-         storeRecord = await StoreInventory.create({
-            product: item.product,
-            variantId: inventoryQuery.variantId || null,
-            variant: inventoryQuery.variantId ? "matched_variant" : "default",
-            locations: { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0, naxxar_garage: 0 }
-         });
+        // Create fallback
+        storeRecord = await StoreInventory.create({
+          product: item.product,
+          variantId: inventoryQuery.variantId || null,
+          variant: inventoryQuery.variantId ? "matched_variant" : "default",
+          locations: { downstairs: 0, upstairs: 0, store: 0, mosta_garage: 0, naxxar_garage: 0 }
+        });
       }
 
       // Verify sufficient stock and deduct
       for (const [loc, qty] of Object.entries(fData.locations)) {
-         const q = parseInt(qty) || 0;
-         if (q > 0) {
-            if (storeRecord.locations[loc] < q) {
-               return res.status(400).json({ message: `Insufficient stock in ${loc} for ${item.name}. Has ${storeRecord.locations[loc] || 0}, needs ${q}.` });
-            }
-            storeRecord.locations[loc] -= q;
-            item.fulfilledLocations.push({ location: loc, quantity: q });
-         }
+        const q = parseInt(qty) || 0;
+        if (q > 0) {
+          if (storeRecord.locations[loc] < q) {
+            return res.status(400).json({ message: `Insufficient stock in ${loc} for ${item.name}. Has ${storeRecord.locations[loc] || 0}, needs ${q}.` });
+          }
+          storeRecord.locations[loc] -= q;
+          item.fulfilledLocations.push({ location: loc, quantity: q });
+        }
       }
 
       await storeRecord.save();
     }
 
     await order.save();
-    
+
     res.json({ message: "Order fulfilled successfully", order });
   } catch (err) {
     console.error("Fulfill error:", err);
@@ -874,7 +875,7 @@ router.post("/guest", orderRateLimiter, async (req, res) => {
     let discountAmount = 0;
     let finalTotal = guestSubTotal;
 
-if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
+    if (couponCode && String(couponCode).toUpperCase().startsWith("WELCOME")) {
       discountAmount = Number((guestSubTotal * 0.05).toFixed(2));
     }
 
