@@ -444,6 +444,218 @@ export const sendCancelMail = async (to, userName, order) => {
   await transporter.sendMail(mailOptions);
 };
 
+/* ---------------------------- Order Packed Email ---------------------------- */
+export const sendPackedMail = async (to, userName, order) => {
+  const orderItems = order.items
+    .map(
+      (item) => `
+      <tr>
+        <td style="padding: 8px 0; border-bottom:1px solid #f1f1f1;">${item.name}</td>
+        <td align="center" style="padding: 8px 0; border-bottom:1px solid #f1f1f1;">${item.qty}</td>
+      </tr>`
+    )
+    .join("");
+
+  const mailOptions = {
+    from: `"Twayba" <${process.env.SMTP_USER}>`,
+    to,
+    subject: "Your Order is Packed & Ready! 📦 | Twayba",
+    html: `
+    <div style="background: #fff; padding: 0; margin:0; min-height: 100vh;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background: #fff;">
+        <tr>
+          <td align="center" style="padding: 0;">
+            <table width="100%" style="max-width: 460px; background: #fff; border-radius: 18px; box-shadow: 0 8px 32px 0 rgba(31,38,135,0.10); font-family: 'Segoe UI', Arial, sans-serif; border: none; margin: 24px auto;">
+              <tr>
+                <td style="padding: 0;">
+                  <div style="width:100%; background:#fff; border-radius: 18px 18px 0 0; text-align:center; padding: 36px 0 10px 0;">
+                    <img src="https://res.cloudinary.com/dwgn4j1nu/image/upload/v1753372667/lqvyv4psgthcxzowovyp.png" alt="Twayba Logo" style="width: 160px; max-width:90vw; height: auto; margin: 0 auto; display:block;" />
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0 32px;">
+                  <h1 style="color: #056cf2; font-size: 26px; margin: 10px 0 0 0; letter-spacing: 1px; font-weight: 800; text-align: left;">
+                    Your Order is Packed! 📦
+                  </h1>
+                  <hr style="border:none;border-top:2px solid #056cf2; width:48px; margin:12px 0 0 0;">
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 22px 32px 8px 32px; text-align: left;">
+                  <h2 style="margin: 0 0 8px 0; font-weight: 600; color: #1A2237; font-size: 19px;">
+                    Hi ${userName || "Customer"},
+                  </h2>
+                  <p style="color: #3b3b3b; font-size: 15px; margin-bottom: 0;">
+                    Great news! Your order at <b style="color:#056cf2;">Twayba</b> has been securely packed and is ready to be shipped out.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0 32px 18px 32px;">
+                  <div style="background: #f6faff; border-left:4px solid #056cf2; border-radius: 9px; padding: 14px 18px; margin-bottom: 12px;">
+                    <table width="100%" style="font-size: 15px; color: #2d334a;">
+                      <tr>
+                        <td><b>Order ID:</b></td>
+                        <td align="right" style="color:#111;">${order._id}</td>
+                      </tr>
+                      <tr>
+                        <td><b>Total Amount:</b></td>
+                        <td align="right" style="font-weight: bold; color:#056cf2; font-size: 17px;">
+                          €${Number(order.total).toFixed(2)}
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+                  <div style="margin: 10px 0 8px 0;">
+                    <b>Items Packed:</b>
+                    <table width="100%" style="margin-top: 6px; font-size: 14px; background: #fff; border-radius: 7px;">
+                      <thead>
+                        <tr style="color: #446; background: #f0f4fc;">
+                          <th align="left" style="padding: 7px 4px;">Product</th>
+                          <th align="center" style="padding: 7px 4px;">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${orderItems}
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0 32px 22px 32px;">
+                  <p style="font-size: 14px; color: #0c41a7; margin: 16px 0 6px 0; text-align:center;">
+                    <b>We will notify you again once your order has been delivered.</b>
+                  </p>
+                  <div style="height: 1px; background: #eaf1fa; margin: 18px 0 12px 0;"></div>
+                  <p style="color: #6f7c97; font-size: 13px; text-align: center;">
+                    Thank you for choosing Twayba. We look forward to serving you!
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0 0 18px 0; text-align: center;">
+                  <span style="color: #b2b2b2; font-size: 12px;">&copy; ${new Date().getFullYear()} Twayba. All rights reserved.</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+/* ---------------------------- Order Delivered Email ---------------------------- */
+export const sendDeliveredMail = async (to, userName, order) => {
+  const orderItems = order.items
+    .map(
+      (item) => `
+      <tr>
+        <td style="padding: 8px 0; border-bottom:1px solid #f1f1f1;">${item.name}</td>
+        <td align="center" style="padding: 8px 0; border-bottom:1px solid #f1f1f1;">${item.qty}</td>
+      </tr>`
+    )
+    .join("");
+
+  const mailOptions = {
+    from: `"Twayba" <${process.env.SMTP_USER}>`,
+    to,
+    subject: "Your Order has been Delivered! 🎉 | Twayba",
+    html: `
+    <div style="background: #fff; padding: 0; margin:0; min-height: 100vh;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="background: #fff;">
+        <tr>
+          <td align="center" style="padding: 0;">
+            <table width="100%" style="max-width: 460px; background: #fff; border-radius: 18px; box-shadow: 0 8px 32px 0 rgba(31,38,135,0.10); font-family: 'Segoe UI', Arial, sans-serif; border: none; margin: 24px auto;">
+              <tr>
+                <td style="padding: 0;">
+                  <div style="width:100%; background:#fff; border-radius: 18px 18px 0 0; text-align:center; padding: 36px 0 10px 0;">
+                    <img src="https://res.cloudinary.com/dwgn4j1nu/image/upload/v1753372667/lqvyv4psgthcxzowovyp.png" alt="Twayba Logo" style="width: 160px; max-width:90vw; height: auto; margin: 0 auto; display:block;" />
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0 32px;">
+                  <h1 style="color: #10b981; font-size: 26px; margin: 10px 0 0 0; letter-spacing: 1px; font-weight: 800; text-align: left;">
+                    Your Order is Delivered! 🎉
+                  </h1>
+                  <hr style="border:none;border-top:2px solid #10b981; width:48px; margin:12px 0 0 0;">
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 22px 32px 8px 32px; text-align: left;">
+                  <h2 style="margin: 0 0 8px 0; font-weight: 600; color: #1A2237; font-size: 19px;">
+                    Hi ${userName || "Customer"},
+                  </h2>
+                  <p style="color: #3b3b3b; font-size: 15px; margin-bottom: 0;">
+                    We are pleased to inform you that your order from <b style="color:#056cf2;">Twayba</b> has successfully arrived! We hope you love your purchase.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0 32px 18px 32px;">
+                  <div style="background: #f0fdf4; border-left:4px solid #10b981; border-radius: 9px; padding: 14px 18px; margin-bottom: 12px;">
+                    <table width="100%" style="font-size: 15px; color: #2d334a;">
+                      <tr>
+                        <td><b>Order ID:</b></td>
+                        <td align="right" style="color:#111;">${order._id}</td>
+                      </tr>
+                      <tr>
+                        <td><b>Total Amount:</b></td>
+                        <td align="right" style="font-weight: bold; color:#10b981; font-size: 17px;">
+                          €${Number(order.total).toFixed(2)}
+                        </td>
+                      </tr>
+                    </table>
+                  </div>
+                  <div style="margin: 10px 0 8px 0;">
+                    <b>Items Delivered:</b>
+                    <table width="100%" style="margin-top: 6px; font-size: 14px; background: #fff; border-radius: 7px;">
+                      <thead>
+                        <tr style="color: #446; background: #f0f4fc;">
+                          <th align="left" style="padding: 7px 4px;">Product</th>
+                          <th align="center" style="padding: 7px 4px;">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${orderItems}
+                      </tbody>
+                    </table>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0 32px 22px 32px;">
+                  <p style="color: #6f7c97; font-size: 14px; text-align:center; margin-bottom:8px;">
+                    If you have any questions or feedback, please reply to this email or <a href="mailto:support@twayba.com" style="color:#056cf2; text-decoration: none;">contact support</a>.
+                  </p>
+                  <div style="height: 1px; background: #eaf1fa; margin: 18px 0 12px 0;"></div>
+                  <p style="color: #6f7c97; font-size: 13px; text-align: center;">
+                    Thank you for choosing Twayba. We look forward to serving you again!
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding: 0 0 18px 0; text-align: center;">
+                  <span style="color: #b2b2b2; font-size: 12px;">&copy; ${new Date().getFullYear()} Twayba. All rights reserved.</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>
+    </div>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
 /* -------------------------- Welcome Gift Email (5% coupon) -------------------------- */
 // export const sendWelcomeGiftEmail = async ({ to, userName, code, expiresAt }) => {
 //   const expiresInHrs = Math.ceil((expiresAt.getTime() - Date.now()) / 3600000);

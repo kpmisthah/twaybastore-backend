@@ -13,6 +13,8 @@ import {
   sendCancelMail,
   sendOtpEmail,
   sendNewOrderAlert,
+  sendPackedMail,
+  sendDeliveredMail,
 } from "../utils/mailer.js";
 import { orderRateLimiter, codRateLimiter } from "../middleware/rateLimiter.js";
 import auth from "../middleware/auth.js";
@@ -573,6 +575,30 @@ router.get("/admin/orders", requireAdmin, async (_req, res) => {
 });
 
 /* -------------------------------------------------------
+   Admin: Delete order
+------------------------------------------------------- */
+router.delete("/admin/:orderId", requireAdmin, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId);
+    if (!order) return res.status(404).json({ message: "Order not found" });
+
+    // Restore stock if the order wasn't already cancelled
+    if (order.status !== "Cancelled") {
+      await adjustStock(order.items, "increment");
+      if (order.isFulfilled) {
+        await restoreStoreInventory(order.items);
+      }
+    }
+
+    await Order.findByIdAndDelete(req.params.orderId);
+    res.json({ message: "Order deleted successfully" });
+  } catch (err) {
+    console.error("Admin delete order error:", err);
+    res.status(500).json({ message: "Failed to delete order." });
+  }
+});
+
+/* -------------------------------------------------------
    Admin: Update order status (after 2 hours)
 ------------------------------------------------------- */
 router.put("/:orderId/status", requireAdmin, async (req, res) => {
@@ -611,6 +637,14 @@ router.put("/:orderId/status", requireAdmin, async (req, res) => {
 
     order.status = status;
     await order.save();
+
+    // Send email notification based on new status (run asynchronously)
+    if (status === "Packed" && order.shipping?.email) {
+      sendPackedMail(order.shipping.email, order.shipping.name || "Customer", order).catch(err => console.error("Packed email error:", err));
+    } else if (status === "Delivered" && order.shipping?.email) {
+      sendDeliveredMail(order.shipping.email, order.shipping.name || "Customer", order).catch(err => console.error("Delivered email error:", err));
+    }
+
     res.json(order);
   } catch (err) {
     console.error("Update status error:", err);
