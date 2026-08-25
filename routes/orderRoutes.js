@@ -1,5 +1,6 @@
 import express from "express";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
 import stripe from "../config/stripe.js";
 
 import { sendTelegramMessage, escapeHTML } from "../utils/telegram.js";
@@ -188,6 +189,52 @@ router.get("/my-orders/:userId", auth, async (req, res) => {
       message: "Failed to fetch user orders.",
       error: process.env.NODE_ENV !== "production" ? err.message : undefined
     });
+  }
+});
+
+/* -------------------------------------------------------
+   Get single order details by ID (Guest or Registered)
+------------------------------------------------------- */
+router.get("/single/:orderId", async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.orderId);
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // If order belongs to a registered user, we check auth
+    if (order.user) {
+      const authHeader = req.headers.authorization || "";
+      const token = authHeader.startsWith("Bearer ")
+        ? authHeader.split(" ")[1]
+        : req.cookies?.token;
+
+      if (!token) {
+        return res.status(401).json({ message: "Unauthorized: Please log in to view this order." });
+      }
+
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        
+        // Fetch user to check if admin or owner of the order
+        const requestUser = await User.findById(decoded.id);
+        if (!requestUser) {
+          return res.status(401).json({ message: "Unauthorized: User not found." });
+        }
+        
+        // If not the order owner AND not an admin, deny access
+        if (order.user.toString() !== decoded.id && requestUser.role !== "admin") {
+          return res.status(403).json({ message: "Forbidden: You do not have permission to view this order." });
+        }
+      } catch (jwtErr) {
+        return res.status(401).json({ message: "Unauthorized: Invalid session token." });
+      }
+    }
+
+    res.json(order);
+  } catch (err) {
+    console.error("Fetch single order error:", err);
+    res.status(500).json({ message: "Server error fetching order details." });
   }
 });
 
