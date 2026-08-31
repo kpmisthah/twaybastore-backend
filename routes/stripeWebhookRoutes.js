@@ -164,7 +164,7 @@ async function handlePaymentSuccess(paymentIntent) {
                     };
                 }
 
-                const total = Number(metadata.subtotal) - Number(metadata.discount);
+                const total = Number(metadata.subtotal) - Number(metadata.discount) + Number(metadata.delivery || 0);
 
                 order = new Order({
                     user: userId,
@@ -180,6 +180,8 @@ async function handlePaymentSuccess(paymentIntent) {
                     paymentStatus: "succeeded",
                     shipping,
                     contact,
+                    deliveryRegion: metadata.region || "Malta",
+                    deliveryMethod: metadata.method || "Shipping",
                     businessDate: getMaltaBusinessDate(),
                 });
 
