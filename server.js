@@ -27,6 +27,7 @@ import bannerRoutes from "./routes/bannerRoutes.js";
 import storeInventoryRoutes from "./routes/storeInventoryRoutes.js";
 import preOrderRoutes from "./routes/preOrderRoutes.js";
 import { initCronJobs, runDailySalesReport } from "./utils/cronJobs.js";
+import { inventoryEnabled, mountInventory } from "./inventory/index.js";
 
 // ✅ Validate environment variables before starting server
 validateEnvironment();
@@ -39,8 +40,10 @@ const allowedOrigins = [
   "https://twayba.com",
   "https://twayba-admin.vercel.app",
   "https://twaybastore-admin.vercel.app",
+  "https://inventory.twayba.com",
   "http://localhost:5173",
   "http://localhost:5174",
+  "http://localhost:5175",
 ];
 
 app.use(
@@ -90,6 +93,9 @@ app.use("/api/admin/pre-orders", preOrderRoutes);
 
 app.use("/api/ipban", ipBanRoutes);
 app.use("/api/admin/auth", adminAuthRoutes);
+
+// Twayba Inventory (warehouse / barcode / POS) — only when INVENTORY_ENABLED=true
+if (inventoryEnabled()) mountInventory(app);
 // Example protected admin API
 app.get("/api/admin/stats", requireAdmin, (req, res) => {
   res.json({ ok: true, message: `Hello Admin ${req.admin.email}` });
