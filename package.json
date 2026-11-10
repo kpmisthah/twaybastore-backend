@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "NODE_ENV=development nodemon server.js",
+    "dev": "cross-env NODE_ENV=development nodemon server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -19,6 +19,7 @@
     "axios": "^1.13.2",
     "base64url": "^3.0.1",
     "bcryptjs": "^3.0.2",
+    "bwip-js": "^4.11.4",
     "cloudinary": "^2.8.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.0",
@@ -39,9 +40,11 @@
     "socket.io": "^4.8.1",
     "stripe": "^18.3.0",
     "twilio": "^5.7.3",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "nodemon": "^3.1.14"
   }
 }
