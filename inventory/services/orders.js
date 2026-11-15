@@ -1,5 +1,5 @@
 import { verifyApprover } from "../auth/approver.js";
-import { nextCounter, withTransaction } from "../lib/db.js";
+import { afterCommit, nextCounter, withTransaction } from "../lib/db.js";
 import { badRequest, conflict, HttpError, notFound } from "../lib/http.js";
 import { lockDoc, m2, userRefs, variantRefs } from "../lib/refs.js";
 import { escapeRegex } from "../lib/validate.js";
@@ -10,6 +10,7 @@ import { audit } from "./audit.js";
 import { assertSiteAccess, systemLocationId, withPaths } from "./locations.js";
 import { SYSTEM_TYPES } from "./locationTree.js";
 import { applyMoves } from "./stock.js";
+import { scheduleWebsiteStock } from "./websiteStock.js";
 
 const s = (v) => (v == null ? v : String(v));
 const sum = (rows, f) => rows.reduce((t, r) => t + f(r), 0);
@@ -99,6 +100,7 @@ export async function createOrder(user, dto, source = "MANUAL", externalId = nul
       },
       session
     );
+    afterCommit(session, () => scheduleWebsiteStock(dto.lines.map((l) => l.variantId)));
     return created._id;
   });
   return getOrder(id);
@@ -621,6 +623,7 @@ export async function cancelOrder(user, id, reason, session) {
     if (!CANCELLABLE.includes(order.status)) throw badRequest(`${order.orderNumber} is ${order.status.toLowerCase()} and can't be cancelled`);
     const { allocations } = await releaseUnpicked(tx, user?.id ?? null, order, "Order cancelled");
     await Order.updateOne({ _id: id }, { $set: { allocations, status: "CANCELLED", cancelReason: reason.trim() } }, { session: tx });
+    afterCommit(tx, () => scheduleWebsiteStock(order.lines.map((l) => l.variantId)));
     await audit({ userId: user?.id ?? null, action: "ORDER_CANCELLED", entity: "Order", entityId: id, data: { orderNumber: order.orderNumber, reason } }, tx);
   };
   if (session) await run(session);

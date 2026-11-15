@@ -21,6 +21,7 @@ import {
   updateVariant,
 } from "../services/products.js";
 import { syncAllFromWebsite } from "../services/websiteSync.js";
+import { pushWebsiteStock, websiteStockEnabled } from "../services/websiteStock.js";
 
 const router = express.Router();
 
@@ -131,6 +132,22 @@ router.post(
   "/products",
   allow(CATALOG_WRITE),
   ah(async (req, res) => send(res, await createProduct(req.staff.id, parse(CreateProduct, req.body)), 201))
+);
+
+/**
+ * Website stock numbers vs inventory. ?dryRun=true only lists the differences (works even while
+ * the automatic update is off — use it to check stock before switching it on).
+ */
+router.post(
+  "/products/website-stock",
+  allow(CATALOG_WRITE),
+  ah(async (req, res) => {
+    const dryRun = req.query.dryRun === "true";
+    if (!dryRun && !websiteStockEnabled()) {
+      throw badRequest("Website stock updates are off (set INVENTORY_WEBSITE_STOCK=true) — use ?dryRun=true to preview");
+    }
+    res.json({ dryRun, enabled: websiteStockEnabled(), ...(await pushWebsiteStock({ dryRun })) });
+  })
 );
 
 /** Re-reads every website product and creates/updates the inventory copies. */

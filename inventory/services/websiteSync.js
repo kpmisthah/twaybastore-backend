@@ -16,6 +16,7 @@ import { money, SKU_PATTERN } from "../lib/validate.js";
 import { Category, Product, Variant } from "../models/Catalog.js";
 import { audit } from "./audit.js";
 import { createStandardVariant, nextFreeVariantCode, resolveTaxRate } from "./products.js";
+import { scheduleWebsiteProduct } from "./websiteStock.js";
 
 const s = (v) => (v == null ? v : String(v));
 
@@ -232,7 +233,9 @@ export function startWebsiteWatcher() {
           Product.updateOne({ "website.productId": id }, { status: "INACTIVE", "website.deleted": true, "website.syncedAt": new Date() })
         );
       } else if (change.fullDocument) {
-        run(id, () => syncFromWebsite(change.fullDocument));
+        // Then put inventory's stock numbers back if someone changed them on the website side
+        // (only writes when they differ, so inventory's own writes don't loop).
+        run(id, () => syncFromWebsite(change.fullDocument).then(() => scheduleWebsiteProduct(id)));
       }
     });
     stream.on("error", (e) => {

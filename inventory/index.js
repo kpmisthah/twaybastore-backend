@@ -19,6 +19,7 @@ import { stocktakeRoutes, transferRoutes } from "./routes/transfers.js";
 import userRoutes from "./routes/users.js";
 import { ensureSystemLocations } from "./services/locations.js";
 import { catchUpWebsiteOrders, startWebsiteOrderWatcher } from "./services/websiteOrders.js";
+import { pushWebsiteStock, websiteStockEnabled } from "./services/websiteStock.js";
 import { startWebsiteWatcher, syncAllFromWebsite } from "./services/websiteSync.js";
 
 export const INVENTORY_BASE = "/api/inv";
@@ -83,6 +84,13 @@ export function mountInventory(app) {
         if (orders.imported || orders.problem) {
           console.log(`📦 Inventory: website orders — ${orders.imported} imported, ${orders.problem} need attention`);
         }
+      }
+      // The website's stock numbers follow inventory (after the order catch-up, so it counts those orders).
+      if (websiteStockEnabled()) {
+        const pushed = await pushWebsiteStock();
+        console.log(`📦 Inventory: website stock checked — ${pushed.changed} of ${pushed.checked} products updated`);
+      } else if (process.env.INVENTORY_WEBSITE_STOCK === "true") {
+        console.warn("📦 Inventory: INVENTORY_WEBSITE_STOCK needs website orders on (INVENTORY_WEBSITE_ORDERS) — not started");
       }
     } catch (e) {
       console.error("📦 Inventory startup error:", e);

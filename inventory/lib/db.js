@@ -13,12 +13,26 @@ export async function withTransaction(fn) {
   try {
     let result;
     await session.withTransaction(async () => {
+      session.afterCommitTasks = []; // reset on every attempt: a retried attempt registers its own
       result = await fn(session);
     });
+    for (const task of session.afterCommitTasks ?? []) {
+      try {
+        task();
+      } catch (e) {
+        console.error("[inventory] after-commit task:", e.message);
+      }
+    }
     return result;
   } finally {
     await session.endSession();
   }
+}
+
+/** Runs `task` once the transaction of `session` has committed (straight away without one). */
+export function afterCommit(session, task) {
+  if (session?.afterCommitTasks) session.afterCommitTasks.push(task);
+  else task();
 }
 
 /**

@@ -6,13 +6,14 @@
 //    changed the same row meanwhile, MongoDB reports a write conflict and the whole transaction
 //    is retried from a fresh read — so two users can never take the same last unit.
 // Pass `session` to make the stock change part of a bigger transaction (a sale, an order…).
-import { isDuplicateKey, withTransaction } from "../lib/db.js";
+import { afterCommit, isDuplicateKey, withTransaction } from "../lib/db.js";
 import { badRequest, conflict, HttpError, notFound } from "../lib/http.js";
 import { Variant } from "../models/Catalog.js";
 import Location from "../models/Location.js";
 import { StockLevel, StockMovement } from "../models/Stock.js";
 import { systemLocationId, withPaths } from "./locations.js";
 import { assertShape, effectsOf, isValidLevel, reasonError, systemLocationError } from "./movementRules.js";
+import { scheduleWebsiteStock } from "./websiteStock.js";
 
 const key = (variantId, locationId) => `${variantId}:${locationId}`;
 
@@ -127,6 +128,9 @@ async function applyIn(session, userId, moves) {
       throw new HttpError(409, "Stock changed while saving — please try again");
     }
   }
+
+  // The website's stock numbers follow inventory (when switched on).
+  afterCommit(session, () => scheduleWebsiteStock(variantIds));
 
   return StockMovement.insertMany(
     moves.map((m) => ({
