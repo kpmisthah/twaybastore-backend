@@ -385,6 +385,11 @@ router.get("/", async (req, res) => {
       filter.weeklyDeal = true;
     }
 
+    // Filter by Black Friday offer
+    if (req.query.blackFridayOffer === 'true') {
+      filter.blackFridayOffer = true;
+    }
+
     // Build sort option
     let sortOption = { createdAt: -1 }; // Default: newest first
     switch (sort) {

@@ -44,6 +44,7 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:5175",
+  "http://localhost:5176",
 ];
 
 app.use(
@@ -51,7 +52,11 @@ app.use(
     origin: function (origin, callback) {
       // Allow requests with no origin (like Postman, curl)
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+      if (
+        allowedOrigins.includes(origin) ||
+        origin.endsWith(".vercel.app") ||
+        /^http:\/\/(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+)(:\d+)?$/.test(origin)
+      ) {
         return callback(null, true);
       } else {
         console.error("UNKNOWN ORIGIN BLOCKED BY CORS:", origin);

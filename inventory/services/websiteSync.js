@@ -16,6 +16,7 @@ import { money, SKU_PATTERN } from "../lib/validate.js";
 import { Category, Product, Variant } from "../models/Catalog.js";
 import { audit } from "./audit.js";
 import { createStandardVariant, nextFreeVariantCode, resolveTaxRate } from "./products.js";
+import { scheduleWebsiteProduct } from "./websiteStock.js";
 
 const s = (v) => (v == null ? v : String(v));
 
@@ -110,11 +111,11 @@ async function updateFromWebsite(existing, web, userId) {
 
   const variantChanges = await withTransaction((session) => syncVariants(session, existing, web));
 
+  if (!Object.keys(changes).length && !variantChanges.length) return "unchanged";
+
   const productUpdate = { "website.syncedAt": new Date(), "website.deleted": deleted };
   for (const [field, { to }] of Object.entries(changes)) productUpdate[field] = to;
   await Product.updateOne({ _id: existing._id }, productUpdate);
-
-  if (!Object.keys(changes).length && !variantChanges.length) return "unchanged";
   await audit({
     userId,
     action: "WEBSITE_PRODUCT_UPDATED",
@@ -184,18 +185,26 @@ async function syncVariants(session, product, web) {
   return changed;
 }
 
+/** Products checked at the same time by a full sync (one at a time took minutes on the live server). */
+const SYNC_CONCURRENCY = 8;
+
 /** Re-reads every website product (deleted ones too) and syncs it. */
 export async function syncAllFromWebsite(userId = null) {
   const totals = { created: 0, updated: 0, unchanged: 0, skipped: 0, failed: 0, errors: [] };
   const products = await WebsiteProduct.find().select("-embedding").lean();
-  for (const web of products) {
-    try {
-      totals[await syncFromWebsite(web, userId)]++;
-    } catch (e) {
-      totals.failed++;
-      if (totals.errors.length < 20) totals.errors.push({ websiteProductId: s(web._id), name: web.name, error: e.message });
+  let next = 0;
+  const worker = async () => {
+    while (next < products.length) {
+      const web = products[next++];
+      try {
+        totals[await syncFromWebsite(web, userId)]++;
+      } catch (e) {
+        totals.failed++;
+        if (totals.errors.length < 20) totals.errors.push({ websiteProductId: s(web._id), name: web.name, error: e.message });
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: SYNC_CONCURRENCY }, worker));
   return totals;
 }
 
@@ -224,7 +233,9 @@ export function startWebsiteWatcher() {
           Product.updateOne({ "website.productId": id }, { status: "INACTIVE", "website.deleted": true, "website.syncedAt": new Date() })
         );
       } else if (change.fullDocument) {
-        run(id, () => syncFromWebsite(change.fullDocument));
+        // Then put inventory's stock numbers back if someone changed them on the website side
+        // (only writes when they differ, so inventory's own writes don't loop).
+        run(id, () => syncFromWebsite(change.fullDocument).then(() => scheduleWebsiteProduct(id)));
       }
     });
     stream.on("error", (e) => {
@@ -240,12 +251,21 @@ export function startWebsiteWatcher() {
 async function categoryFor(name) {
   const clean = name?.trim();
   if (!clean) return null;
-  const category = await Category.findOneAndUpdate(
-    { nameKey: clean.toLowerCase() },
-    { $setOnInsert: { name: clean, nameKey: clean.toLowerCase(), active: true } },
-    { upsert: true, new: true }
-  ).lean();
-  return category._id;
+  const nameKey = clean.toLowerCase();
+  const existing = await Category.findOne({ nameKey }).select("_id").lean();
+  if (existing) return existing._id;
+  try {
+    const category = await Category.findOneAndUpdate(
+      { nameKey },
+      { $setOnInsert: { name: clean, nameKey, active: true } },
+      { upsert: true, new: true }
+    ).lean();
+    return category._id;
+  } catch (e) {
+    // Two products with the same new category synced at the same moment.
+    if (!isDuplicateKey(e)) throw e;
+    return (await Category.findOne({ nameKey }).select("_id").lean())._id;
+  }
 }
 
 /** The website's own SKU, if it is valid, not a system code and not used yet. */

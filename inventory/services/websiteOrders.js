@@ -18,7 +18,7 @@ import { Product, Variant } from "../models/Catalog.js";
 import { ImportIssue, Order } from "../models/Order.js";
 import Setting from "../models/Setting.js";
 import { audit } from "./audit.js";
-import { cancelOrder, createOrder, getOrder } from "./orders.js";
+import { allocateOrder, cancelOrder, createOrder, getOrder, suggestForOrder } from "./orders.js";
 import { syncFromWebsite } from "./websiteSync.js";
 
 const s = (v) => (v == null ? v : String(v));
@@ -108,7 +108,8 @@ export async function importWebsiteOrder(web) {
     lines,
   };
   try {
-    return await createOrder(null, dto, "WEBSITE", externalId, prices);
+    const order = await createOrder(null, dto, "WEBSITE", externalId, prices);
+    return await autoReserve(order);
   } catch (e) {
     // The watcher and the catch-up can race on the same order — the unique index wins.
     if (isDuplicateKey(e)) {
@@ -149,6 +150,28 @@ async function variantFor(item) {
   const own = await Variant.find({ productId: product._id, kind: { $ne: "COMPONENT" } }).select("_id active").sort({ sortOrder: 1 }).lean();
   const pick = own.find((v) => v.active) ?? own[0];
   return pick ? s(pick._id) : null;
+}
+
+/** Done by the system, not a person (no site limits). */
+const SYSTEM_USER = { id: null, role: "ADMIN", siteIds: [] };
+
+/**
+ * Reserves a new website order's stock straight away, where the allocation suggestion says
+ * (the same a manager would get), so the shop can't sell those items meanwhile. When there isn't
+ * enough stock the order stays NEW for a manager; its items still count as sold on the website.
+ */
+async function autoReserve(order) {
+  try {
+    const suggestion = await suggestForOrder(order.id);
+    if (suggestion.short.length || !suggestion.allocations.length) return order;
+    return await allocateOrder(SYSTEM_USER, order.id, {
+      allocations: suggestion.allocations.map(({ lineId, variantId, locationId, quantity }) => ({ lineId, variantId, locationId, quantity })),
+    });
+  } catch (e) {
+    // Stock changed in between, etc. — a manager allocates it by hand.
+    console.warn(`[inventory] could not reserve ${order.orderNumber} automatically:`, e.message);
+    return getOrder(order.id);
+  }
 }
 
 async function cancelFromWebsite(order, web) {
