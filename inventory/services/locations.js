@@ -3,7 +3,12 @@ import { locationCode } from "../lib/codes.js";
 import { nextCounter, withTransaction } from "../lib/db.js";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http.js";
 import Location from "../models/Location.js";
-import { StockLevel } from "../models/Stock.js";
+import { Order } from "../models/Order.js";
+import { CreditNote, Sale } from "../models/Sale.js";
+import { StockLevel, StockMovement } from "../models/Stock.js";
+import { Stocktake, StocktakeLine, Transfer } from "../models/Transfer.js";
+import User from "../models/User.js";
+import cloudinary from "../../utils/cloudinaryClient.js";
 import { audit } from "./audit.js";
 import {
   buildPaths,
@@ -23,6 +28,7 @@ const plain = (l) => ({
   parentId: l.parentId ? String(l.parentId) : null,
   sortOrder: l.sortOrder,
   active: l.active,
+  imageUrl: l.imageUrl ?? null,
   createdAt: l.createdAt,
   updatedAt: l.updatedAt,
 });
@@ -71,6 +77,19 @@ export async function lookupLocation(code) {
   return getLocation(String(location._id));
 }
 
+/** Removes a photo from Cloudinary (best effort — a failure must never block the location change). */
+async function removeImages(urls) {
+  for (const url of urls.filter(Boolean)) {
+    const match = url.match(/\/image\/upload\/(?:v\d+\/)?(twayba\/inventory\/locations\/[^/.]+)/);
+    if (!match) continue;
+    try {
+      await cloudinary.uploader.destroy(match[1]);
+    } catch (err) {
+      console.warn("Could not delete location photo from Cloudinary:", err?.message);
+    }
+  }
+}
+
 /** Creates one or more siblings at once, e.g. spaces A1…A6 on a shelf. */
 export async function createLocations(userId, dto) {
   const names = dto.names.map((n) => n.trim()).filter(Boolean);
@@ -111,7 +130,16 @@ export async function createLocations(userId, dto) {
     for (const [i, name] of names.entries()) {
       const code = locationCode(await nextCounter("location", session));
       const [row] = await Location.create(
-        [{ type: dto.type, name, code, parentId: parent?._id ?? null, sortOrder: startOrder + i }],
+        [
+          {
+            type: dto.type,
+            name,
+            code,
+            parentId: parent?._id ?? null,
+            sortOrder: startOrder + i,
+            imageUrl: names.length === 1 ? (dto.imageUrl ?? null) : null,
+          },
+        ],
         { session }
       );
       await audit(
@@ -162,7 +190,11 @@ export async function updateLocation(userId, id, dto) {
   const data = {};
   if (name) data.name = name;
   if (dto.active !== undefined) data.active = dto.active;
+  if (dto.imageUrl !== undefined) data.imageUrl = dto.imageUrl;
   const location = await Location.findByIdAndUpdate(id, data, { new: true }).lean();
+  if (dto.imageUrl !== undefined && before.imageUrl && before.imageUrl !== dto.imageUrl) {
+    await removeImages([before.imageUrl]);
+  }
   await audit({
     userId,
     action: "LOCATION_UPDATED",
@@ -174,6 +206,62 @@ export async function updateLocation(userId, id, dto) {
     },
   });
   return getLocation(id);
+}
+
+/**
+ * Whether anything ever referred to these locations: stock (even a zero row), ledger entries,
+ * transfers, stocktakes, sales, credit notes or orders. Such locations can only be hidden —
+ * deleting them would break the history.
+ */
+async function hasHistory(ids) {
+  const inIds = { $in: ids };
+  const checks = [
+    StockLevel.exists({ locationId: inIds }),
+    StockMovement.exists({ $or: [{ fromLocationId: inIds }, { toLocationId: inIds }] }),
+    Transfer.exists({ $or: [{ fromLocationId: inIds }, { toLocationId: inIds }] }),
+    Stocktake.exists({ locationId: inIds }),
+    StocktakeLine.exists({ locationId: inIds }),
+    Sale.exists({ $or: [{ siteId: inIds }, { "lines.picks.locationId": inIds }] }),
+    CreditNote.exists({ "lines.locationId": inIds }),
+    Order.exists({ $or: [{ "allocations.locationId": inIds }, { "exceptions.locationId": inIds }] }),
+  ];
+  return (await Promise.all(checks)).some(Boolean);
+}
+
+/**
+ * Permanently deletes a location and everything inside it — only if none of it was ever used.
+ * Otherwise the caller should hide it instead (stock history keeps pointing at it).
+ */
+export async function deleteLocation(userId, id) {
+  const all = await withPaths();
+  const target = all.find((l) => l.id === id);
+  if (!target) throw notFound("Location not found");
+  if (SYSTEM_TYPES.includes(target.type)) {
+    throw badRequest(`"${target.name}" is a system location and can't be deleted`);
+  }
+  const doomed = withDescendants(all, [id]);
+  const ids = doomed.map((l) => l.id);
+  if (await hasHistory(ids)) {
+    throw conflict(
+      `"${target.name}" has stock history, so it can't be deleted. Hide it instead — it disappears from the list but past records stay correct.`
+    );
+  }
+  await withTransaction(async (session) => {
+    await Location.deleteMany({ _id: { $in: ids } }, { session });
+    await User.updateMany({ siteIds: { $in: ids } }, { $pull: { siteIds: { $in: ids } } }, { session });
+    await audit(
+      {
+        userId,
+        action: "LOCATION_DELETED",
+        entity: "Location",
+        entityId: id,
+        data: { name: target.name, code: target.code, type: target.type, deletedCount: ids.length },
+      },
+      session
+    );
+  });
+  await removeImages(doomed.map((l) => l.imageUrl));
+  return { deleted: ids.length };
 }
 
 async function holdsStock(locationId) {
