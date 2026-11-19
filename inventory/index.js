@@ -7,7 +7,6 @@ import { ah, errorHandler, notFound } from "./lib/http.js";
 import auditRoutes from "./routes/audit.js";
 import authRoutes from "./routes/auth.js";
 import locationRoutes from "./routes/locations.js";
-import importRoutes from "./routes/imports.js";
 import miscRoutes from "./routes/misc.js";
 import productRoutes from "./routes/products.js";
 import reportRoutes from "./routes/reports.js";
@@ -51,7 +50,6 @@ function buildRouter() {
   router.use("/", miscRoutes);
   // After misc.js, which answers GET /reports/options.
   router.use("/reports", reportRoutes);
-  router.use("/imports", importRoutes);
 
   router.use(
     ah(async () => {
