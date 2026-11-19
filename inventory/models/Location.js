@@ -15,6 +15,8 @@ const locationSchema = new Schema(
     parentId: { type: ObjectId, ref: "InvLocation", default: null },
     sortOrder: { type: Number, default: 0 },
     active: { type: Boolean, default: true },
+    /** Optional photo (Cloudinary URL) so staff can recognise the place. */
+    imageUrl: { type: String, default: null },
   },
   { timestamps: true }
 );

@@ -4,7 +4,7 @@ import multer from "multer";
 import { z } from "zod";
 import cloudinary from "../../utils/cloudinaryClient.js";
 import { allow } from "../auth/auth.js";
-import { AUDIT_READ, CATALOG_WRITE, DASHBOARD, LABEL_PRINT, REPORTS_READ, SALES_READ, STOCK_WRITE } from "../auth/roles.js";
+import { AUDIT_READ, CATALOG_WRITE, DASHBOARD, LABEL_PRINT, LOCATION_WRITE, REPORTS_READ, SALES_READ, STOCK_WRITE } from "../auth/roles.js";
 import { dayRange, maltaToday } from "../lib/dates.js";
 import { ah, badRequest } from "../lib/http.js";
 import { send } from "../lib/json.js";
@@ -87,6 +87,8 @@ const saveImage = (folder) =>
 router.post("/uploads/products", allow(CATALOG_WRITE), saveImage("products"));
 /** Photo of a delivery, a damaged box or a failed drop-off, taken by the driver. */
 router.post("/uploads/deliveries", allow(STOCK_WRITE), saveImage("deliveries"));
+/** Photo of a site, floor, room, shelf or space. */
+router.post("/uploads/locations", allow(LOCATION_WRITE), saveImage("locations"));
 
 // ----------------------------------------------------------------- dashboard
 
