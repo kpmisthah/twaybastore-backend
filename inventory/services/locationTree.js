@@ -5,7 +5,7 @@ export const CHILD_TYPES = {
   ROOT: ["SITE"],
   SITE: ["FLOOR", "ROOM"],
   FLOOR: ["ROOM"],
-  ROOM: ["SHELF"],
+  ROOM: ["SHELF", "SPACE"],
   SHELF: ["SPACE"],
   SPACE: [],
   TRANSIT: [],
